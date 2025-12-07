@@ -3,27 +3,44 @@
   import { supabase } from '$lib/supabase';
   
   let currentUser = null;
-  let currentScreen = 'userSelect';
+  let currentScreen = 'userSelect'; // userSelect, welcome, dailyHabits, monthView, dashboard
   let currentCardIndex = 0;
   let todayAnswers = {};
   let swipeStartX = 0;
   let swipeCurrentX = 0;
   let isDragging = false;
   let showConfetti = false;
+  let showStreakPopup = false;
+  let animatePoints = false;
   
   let users = [];
   let habits = [];
   let userHistory = [];
   let otherUserData = null;
   let stats = { thisMonth: 0, thisYear: 0, streak: 0 };
+  let otherUserStats = { thisMonth: 0, thisYear: 0 };
   let loading = true;
+  let selectedMonth = new Date().getMonth();
+  let selectedYear = new Date().getFullYear();
+  let monthData = [];
 
   $: currentHabit = habits[currentCardIndex];
   $: currentAnswer = todayAnswers[currentHabit?.id];
   $: completedToday = Object.values(todayAnswers).filter(Boolean).length;
-  $: totalToday = habits.length;
-  $: percentage = totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
+  $: earnedPointsToday = calculateEarnedPoints();
+  $: maxPointsToday = habits.reduce((sum, h) => sum + (h.points || 1), 0);
+  $: percentage = maxPointsToday > 0 ? Math.round((earnedPointsToday / maxPointsToday) * 100) : 0;
   $: otherUser = currentUser ? users.find(u => u.id !== currentUser.id) : null;
+
+  function calculateEarnedPoints() {
+    let points = 0;
+    habits.forEach(habit => {
+      if (todayAnswers[habit.id] === true) {
+        points += habit.points || 1;
+      }
+    });
+    return points;
+  }
 
   onMount(async () => {
     await loadUsers();
@@ -76,29 +93,37 @@
     }
   }
 
-  async function loadHistory(userId) {
+  async function loadMonthData(userId, month, year) {
+    const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+    const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
     const { data, error } = await supabase
       .from('habit_logs')
-      .select('date, completed')
+      .select('*, habits(title, icon, points)')
       .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(30);
-    
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date');
+
     if (error) {
-      console.error('Error loading history:', error);
+      console.error('Error loading month data:', error);
       return;
     }
 
-    // Gruppiere nach Datum und zähle Punkte
+    // Gruppiere nach Datum
     const grouped = {};
     data?.forEach(log => {
-      if (!grouped[log.date]) grouped[log.date] = 0;
-      if (log.completed) grouped[log.date]++;
+      if (!grouped[log.date]) {
+        grouped[log.date] = [];
+      }
+      grouped[log.date].push(log);
     });
 
-    userHistory = Object.entries(grouped)
-      .map(([date, points]) => ({ date, points }))
-      .slice(0, 7);
+    monthData = Object.entries(grouped).map(([date, logs]) => ({
+      date,
+      logs,
+      points: logs.reduce((sum, log) => sum + (log.completed ? (log.habits?.points || 1) : 0), 0)
+    })).sort((a, b) => b.date.localeCompare(a.date));
   }
 
   async function loadStats(userId) {
@@ -106,88 +131,133 @@
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
     const thisYearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
 
-    // Monatspunkte
-    const { data: monthData } = await supabase
+    // Monatspunkte mit points-Spalte
+    const { data: monthLogs } = await supabase
       .from('habit_logs')
-      .select('completed')
+      .select('completed, habits(points)')
       .eq('user_id', userId)
       .eq('completed', true)
       .gte('date', thisMonthStart);
 
+    const monthPoints = monthLogs?.reduce((sum, log) => sum + (log.habits?.points || 1), 0) || 0;
+
     // Jahrespunkte
-    const { data: yearData } = await supabase
+    const { data: yearLogs } = await supabase
       .from('habit_logs')
-      .select('completed')
+      .select('completed, habits(points)')
       .eq('user_id', userId)
       .eq('completed', true)
       .gte('date', thisYearStart);
 
-    // Streak berechnen
-    const { data: allDates } = await supabase
-      .from('habit_logs')
-      .select('date, completed')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
+    const yearPoints = yearLogs?.reduce((sum, log) => sum + (log.habits?.points || 1), 0) || 0;
 
+    // NoFap Streak berechnen
+    const noFapHabit = habits.find(h => h.title.toLowerCase().includes('masturbiert'));
     let streak = 0;
-    const dateGroups = {};
-    allDates?.forEach(log => {
-      if (!dateGroups[log.date]) dateGroups[log.date] = [];
-      dateGroups[log.date].push(log.completed);
-    });
+    
+    if (noFapHabit) {
+      const { data: streakData } = await supabase
+        .from('habit_logs')
+        .select('date, completed')
+        .eq('user_id', userId)
+        .eq('habit_id', noFapHabit.id)
+        .order('date', { ascending: false });
 
-    const sortedDates = Object.keys(dateGroups).sort().reverse();
-    for (let date of sortedDates) {
-      const hasAnyCompleted = dateGroups[date].some(c => c);
-      if (hasAnyCompleted) {
-        streak++;
-      } else {
-        break;
+      if (streakData) {
+        for (let log of streakData) {
+          if (log.completed) {
+            streak++;
+          } else {
+            break;
+          }
+        }
       }
     }
 
     stats = {
-      thisMonth: monthData?.length || 0,
-      thisYear: yearData?.length || 0,
+      thisMonth: monthPoints,
+      thisYear: yearPoints,
       streak
     };
   }
 
-  async function loadOtherUserData(otherUserId) {
+  async function loadOtherUserStats(otherUserId) {
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const thisYearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
-    
-    const { data, error } = await supabase
+
+    // Heute
+    const { data: todayLogs } = await supabase
       .from('habit_logs')
-      .select('completed')
+      .select('completed, habits(points)')
       .eq('user_id', otherUserId)
       .eq('date', today);
-    
-    if (error) {
-      console.error('Error loading other user data:', error);
-      return;
-    }
 
-    const completed = data?.filter(log => log.completed).length || 0;
-    const total = data?.length || 0;
-    
+    const todayPoints = todayLogs?.reduce((sum, log) => sum + (log.completed ? (log.habits?.points || 1) : 0), 0) || 0;
+    const todayTotal = todayLogs?.length || 0;
+
+    // Monat
+    const { data: monthLogs } = await supabase
+      .from('habit_logs')
+      .select('completed, habits(points)')
+      .eq('user_id', otherUserId)
+      .eq('completed', true)
+      .gte('date', thisMonthStart);
+
+    const monthPoints = monthLogs?.reduce((sum, log) => sum + (log.habits?.points || 1), 0) || 0;
+
+    // Jahr
+    const { data: yearLogs } = await supabase
+      .from('habit_logs')
+      .select('completed, habits(points)')
+      .eq('user_id', otherUserId)
+      .eq('completed', true)
+      .gte('date', thisYearStart);
+
+    const yearPoints = yearLogs?.reduce((sum, log) => sum + (log.habits?.points || 1), 0) || 0;
+
     otherUserData = {
-      completed,
-      total: total || 4,
-      percentage: total > 0 ? Math.round((completed / total) * 100) : 0
+      completed: todayPoints,
+      total: todayTotal,
+      percentage: todayTotal > 0 ? Math.round((todayPoints / todayTotal) * 100) : 0
+    };
+
+    otherUserStats = {
+      thisMonth: monthPoints,
+      thisYear: yearPoints
     };
   }
 
   async function selectUser(user) {
     currentUser = user;
+    currentScreen = 'welcome';
+  }
+
+  async function startDailyHabits() {
     loading = true;
-    
-    await Promise.all([
-      loadHabits(user.id),
-      loadTodayAnswers(user.id),
-      loadStats(user.id)
-    ]);
-    
+    await loadHabits(currentUser.id);
+    await loadTodayAnswers(currentUser.id);
     currentScreen = 'dailyHabits';
+    loading = false;
+  }
+
+  async function openMonthView() {
+    loading = true;
+    await loadHabits(currentUser.id);
+    await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+    currentScreen = 'monthView';
+    loading = false;
+  }
+
+  async function openDashboard() {
+    loading = true;
+    await loadHabits(currentUser.id);
+    await loadStats(currentUser.id);
+    if (otherUser) {
+      await loadOtherUserStats(otherUser.id);
+    }
+    currentScreen = 'dashboard';
     loading = false;
   }
 
@@ -197,7 +267,6 @@
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Prüfe ob schon ein Eintrag existiert
     const { data: existing } = await supabase
       .from('habit_logs')
       .select('id')
@@ -207,13 +276,11 @@
       .single();
 
     if (existing) {
-      // Update
       await supabase
         .from('habit_logs')
         .update({ completed: answer })
         .eq('id', existing.id);
     } else {
-      // Insert
       await supabase
         .from('habit_logs')
         .insert({
@@ -230,17 +297,26 @@
       currentCardIndex++;
     } else {
       loading = true;
-      await Promise.all([
-        loadHistory(currentUser.id),
-        loadStats(currentUser.id),
-        loadOtherUserData(otherUser.id)
-      ]);
-      currentScreen = 'overview';
-      loading = false;
-      
-      if (percentage === 100) {
-        triggerConfetti();
+      await loadStats(currentUser.id);
+      if (otherUser) {
+        await loadOtherUserStats(otherUser.id);
       }
+      loading = false;
+      currentScreen = 'dashboard';
+      
+      // Animationen starten
+      setTimeout(() => {
+        animatePoints = true;
+        setTimeout(() => {
+          if (percentage === 100) {
+            triggerConfetti();
+          }
+          showStreakPopup = true;
+          setTimeout(() => {
+            showStreakPopup = false;
+          }, 3000);
+        }, 2000);
+      }, 300);
     }
   }
 
@@ -250,13 +326,13 @@
     }
   }
 
-  async function resetDay() {
-    currentCardIndex = 0;
-    loading = true;
-    await loadTodayAnswers(currentUser.id);
-    currentScreen = 'dailyHabits';
-    showConfetti = false;
-    loading = false;
+  async function updateMonthLog(logId, completed) {
+    await supabase
+      .from('habit_logs')
+      .update({ completed })
+      .eq('id', logId);
+    
+    await loadMonthData(currentUser.id, selectedMonth, selectedYear);
   }
 
   function resetToUserSelect() {
@@ -266,6 +342,7 @@
     todayAnswers = {};
     habits = [];
     showConfetti = false;
+    animatePoints = false;
   }
 
   function triggerConfetti() {
@@ -303,9 +380,40 @@
     const date = new Date(dateString);
     return date.toLocaleDateString('de-DE', { 
       day: '2-digit', 
-      month: '2-digit', 
-      year: 'numeric' 
+      month: '2-digit'
     });
+  }
+
+  function getMonthName(month) {
+    const names = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 
+                   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+    return names[month];
+  }
+
+  // Counter Animation
+  function animateCounter(element, start, end, duration) {
+    if (!element) return;
+    const range = end - start;
+    const increment = range / (duration / 16);
+    let current = start;
+    
+    const timer = setInterval(() => {
+      current += increment;
+      if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+        current = end;
+        clearInterval(timer);
+      }
+      element.textContent = Math.floor(current);
+    }, 16);
+  }
+
+  $: if (animatePoints) {
+    setTimeout(() => {
+      const monthEl = document.getElementById('month-points');
+      const yearEl = document.getElementById('year-points');
+      if (monthEl) animateCounter(monthEl, 0, stats.thisMonth, 1500);
+      if (yearEl) animateCounter(yearEl, 0, stats.thisYear, 2000);
+    }, 100);
   }
 </script>
 
@@ -323,6 +431,10 @@
       from { transform: translateX(100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
     }
+    @keyframes slideUp {
+      from { transform: translateY(50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
     @keyframes gradient {
       0% { background-position: 0% 50%; }
       50% { background-position: 100% 50%; }
@@ -332,13 +444,24 @@
       0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
       100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    @keyframes lightning {
+      0%, 100% { opacity: 0; transform: scale(0.8) rotate(0deg); }
+      50% { opacity: 1; transform: scale(1.2) rotate(15deg); }
     }
+    @keyframes popIn {
+      0% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
     .animate-ripple { animation: ripple 0.6s ease-out; }
     .animate-bounce-once { animation: bounce 0.3s ease-in-out; }
     .card-enter { animation: slideIn 0.4s ease-out; }
+    .slide-up { animation: slideUp 0.6s ease-out; }
     .gradient-animate { background-size: 200% 200%; animation: gradient 3s ease infinite; }
+    .pop-in { animation: popIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
+    .lightning { animation: lightning 0.3s ease-in-out infinite; }
     .confetti-piece {
       position: fixed;
       width: 10px;
@@ -372,6 +495,24 @@
   {/each}
 {/if}
 
+{#if showStreakPopup}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center pop-in relative overflow-hidden">
+      <div class="absolute top-4 left-4 text-4xl lightning">⚡</div>
+      <div class="absolute top-4 right-4 text-4xl lightning" style="animation-delay: 0.15s;">⚡</div>
+      <div class="absolute bottom-4 left-8 text-3xl lightning" style="animation-delay: 0.3s;">⚡</div>
+      <div class="absolute bottom-4 right-8 text-3xl lightning" style="animation-delay: 0.45s;">⚡</div>
+      
+      <div class="text-6xl mb-4">🚫🍆</div>
+      <h3 class="text-3xl font-bold text-gray-800 mb-2">NoFap Streak</h3>
+      <div class="text-6xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+        {stats.streak}
+      </div>
+      <p class="text-gray-600 text-lg">Tage am Stück! 💪</p>
+    </div>
+  </div>
+{/if}
+
 <div class="min-h-screen">
   {#if loading && currentScreen !== 'userSelect'}
     <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex items-center justify-center">
@@ -401,11 +542,71 @@
       </div>
     </div>
 
+  {:else if currentScreen === 'welcome'}
+    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex items-center justify-center p-4">
+      <div class="max-w-md w-full">
+        <div class="text-center mb-8">
+          <h1 class="text-4xl font-bold text-gray-800 mb-2 animate-bounce-once">
+            Herzlich Willkommen! 😎
+          </h1>
+          <p class="text-xl text-gray-700">{currentUser?.name}</p>
+        </div>
+
+        <div class="space-y-4">
+          <button
+            on:click={startDailyHabits}
+            class="w-full bg-gradient-to-r from-green-400 to-green-600 hover:from-green-500 hover:to-green-700 text-white rounded-2xl p-6 shadow-2xl transform hover:scale-105 active:scale-95 transition-all duration-300 text-left"
+          >
+            <div class="flex items-center gap-4">
+              <div class="text-4xl">✅</div>
+              <div>
+                <div class="text-xl font-bold">Heutigen Tag abschließen</div>
+                <div class="text-sm opacity-90">Beantworte deine täglichen Habits</div>
+              </div>
+            </div>
+          </button>
+
+          <button
+            on:click={openMonthView}
+            class="w-full bg-white hover:bg-gray-50 text-gray-800 rounded-2xl p-6 shadow-xl transform hover:scale-105 active:scale-95 transition-all duration-300 text-left"
+          >
+            <div class="flex items-center gap-4">
+              <div class="text-4xl">📊</div>
+              <div>
+                <div class="text-xl font-bold">Tabelle & Bearbeiten</div>
+                <div class="text-sm text-gray-600">Monatsübersicht mit Vergleich</div>
+              </div>
+            </div>
+          </button>
+
+          <button
+            on:click={openDashboard}
+            class="w-full bg-white hover:bg-gray-50 text-gray-800 rounded-2xl p-6 shadow-xl transform hover:scale-105 active:scale-95 transition-all duration-300 text-left"
+          >
+            <div class="flex items-center gap-4">
+              <div class="text-4xl">🏆</div>
+              <div>
+                <div class="text-xl font-bold">Punkte Dashboard</div>
+                <div class="text-sm text-gray-600">Statistiken & Vergleich</div>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <button
+          on:click={resetToUserSelect}
+          class="w-full mt-6 text-gray-600 hover:text-gray-800 py-3 transition-colors"
+        >
+          ← Zurück zur Benutzerauswahl
+        </button>
+      </div>
+    </div>
+
   {:else if currentScreen === 'dailyHabits'}
     <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6 flex flex-col">
       <div class="flex items-center justify-between mb-6">
         <button
-          on:click={resetToUserSelect}
+          on:click={() => currentScreen = 'welcome'}
           class="p-3 hover:bg-white/50 rounded-xl transition-colors active:scale-95"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -446,6 +647,9 @@
               <h3 class="text-2xl font-bold text-gray-800 mb-3">
                 {currentHabit.title}
               </h3>
+              <div class="inline-block bg-gradient-to-r from-purple-400 to-pink-400 text-white px-4 py-2 rounded-full font-bold text-sm">
+                {currentHabit.points || 1} Punkt{(currentHabit.points || 1) !== 1 ? 'e' : ''}
+              </div>
               <p class="text-gray-500 text-sm mt-4">👆 Wische oder ziehe für Navigation</p>
             </div>
 
@@ -544,12 +748,122 @@
       {/if}
     </div>
 
-  {:else if currentScreen === 'overview'}
+  {:else if currentScreen === 'monthView'}
+    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6">
+      <div class="max-w-4xl mx-auto">
+        <div class="flex items-center justify-between mb-6">
+          <button
+            on:click={() => currentScreen = 'welcome'}
+            class="p-3 hover:bg-white/50 rounded-xl transition-colors active:scale-95"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <h2 class="text-2xl font-bold text-gray-800">Monatsübersicht</h2>
+          <div class="w-12"></div>
+        </div>
+
+        <!-- Monat Auswahl -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <div class="flex gap-4 items-center justify-center">
+            <button
+              on:click={() => {
+                if (selectedMonth === 0) {
+                  selectedMonth = 11;
+                  selectedYear--;
+                } else {
+                  selectedMonth--;
+                }
+                loadMonthData(currentUser.id, selectedMonth, selectedYear);
+              }}
+              class="p-2 hover:bg-gray-100 rounded-lg"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+              </svg>
+            </button>
+            
+            <div class="text-center">
+              <div class="text-2xl font-bold text-gray-800">
+                {getMonthName(selectedMonth)} {selectedYear}
+              </div>
+            </div>
+
+            <button
+              on:click={() => {
+                if (selectedMonth === 11) {
+                  selectedMonth = 0;
+                  selectedYear++;
+                } else {
+                  selectedMonth++;
+                }
+                loadMonthData(currentUser.id, selectedMonth, selectedYear);
+              }}
+              class="p-2 hover:bg-gray-100 rounded-lg"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tage Liste -->
+        <div class="space-y-4">
+          {#each monthData as day}
+            <div class="bg-white rounded-2xl shadow-xl p-6">
+              <div class="flex items-center justify-between mb-4">
+                <div>
+                  <div class="text-lg font-bold text-gray-800">{formatDate(day.date)}</div>
+                  <div class="text-sm text-gray-600">
+                    {day.points} Punkt{day.points !== 1 ? 'e' : ''}
+                  </div>
+                </div>
+                <div class="text-3xl">
+                  {#if day.points >= maxPointsToday * 0.8}
+                    🎉
+                  {:else if day.points >= maxPointsToday * 0.5}
+                    👍
+                  {:else}
+                    💪
+                  {/if}
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                {#each day.logs as log}
+                  <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <div class="flex items-center gap-3">
+                      <span class="text-2xl">{log.habits?.icon}</span>
+                      <div>
+                        <div class="font-medium text-gray-800">{log.habits?.title}</div>
+                        <div class="text-xs text-gray-500">{log.habits?.points || 1} Punkt{(log.habits?.points || 1) !== 1 ? 'e' : ''}</div>
+                      </div>
+                    </div>
+                    <button
+                      on:click={() => updateMonthLog(log.id, !log.completed)}
+                      class="p-2 rounded-lg transition-all {log.completed ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'}"
+                    >
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                      </svg>
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+
+  {:else if currentScreen === 'dashboard'}
     <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6">
       <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-8">
           <button
-            on:click={resetDay}
+            on:click={() => currentScreen = 'welcome'}
             class="p-3 hover:bg-white/50 rounded-xl transition-colors active:scale-95"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -557,151 +871,125 @@
             </svg>
           </button>
           <h2 class="text-2xl font-bold text-gray-800">{currentUser?.name}</h2>
-          <button
-            on:click={resetToUserSelect}
-            class="px-4 py-2 bg-white/50 hover:bg-white/70 rounded-xl transition-colors text-sm font-medium active:scale-95"
-          >
-            Wechseln
-          </button>
+          <div class="w-12"></div>
         </div>
 
+        <!-- Hauptstatistik mit Animation -->
         <div class="bg-white rounded-3xl shadow-2xl p-8 mb-6 text-center">
           <div class="text-7xl mb-4 animate-bounce-once">
             {percentage >= 80 ? '🎉' : percentage >= 50 ? '👍' : '💪'}
           </div>
           <h3 class="text-3xl font-bold text-gray-800 mb-2">
-            {completedToday} von {totalToday} geschafft!
+            {earnedPointsToday} von {maxPointsToday} Punkten!
           </h3>
           <p class="text-gray-600 text-lg mb-6">{percentage}% heute erreicht</p>
           
-          <div class="w-full bg-gray-200 rounded-full h-4 shadow-inner">
+          <div class="w-full bg-gray-200 rounded-full h-4 shadow-inner mb-8">
             <div 
               class="bg-gradient-to-r from-green-400 to-green-600 h-4 rounded-full transition-all duration-1000 shadow-sm"
               style="width: {percentage}%"
             ></div>
           </div>
+
+          <!-- Animierte Punkte -->
+          {#if animatePoints}
+            <div class="grid grid-cols-2 gap-4 slide-up">
+              <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6">
+                <div class="text-sm text-gray-600 mb-2">Punkte diesen Monat</div>
+                <div id="month-points" class="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                  0
+                </div>
+              </div>
+              
+              <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6">
+                <div class="text-sm text-gray-600 mb-2">Punkte dieses Jahr</div>
+                <div id="year-points" class="text-5xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                  0
+                </div>
+              </div>
+            </div>
+          {/if}
         </div>
 
-        {#if otherUser && otherUserData}
-          <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-3xl shadow-xl p-6 mb-6">
-            <div class="flex items-center justify-between mb-4">
-              <h4 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <span class="text-2xl">🏆</span>
-                Vergleich mit {otherUser.name}
-              </h4>
+        <!-- NoFap Streak Box -->
+        {#if animatePoints && !showStreakPopup}
+          <div class="bg-gradient-to-br from-orange-50 to-red-50 border-2 border-orange-200 rounded-3xl shadow-xl p-6 mb-6 text-center slide-up" style="animation-delay: 0.3s;">
+            <div class="text-5xl mb-3">🚫🍆</div>
+            <div class="text-2xl font-bold text-gray-800 mb-2">NoFap Streak</div>
+            <div class="text-6xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+              {stats.streak}
             </div>
-            
-            <div class="grid grid-cols-2 gap-4">
-              <div class="bg-white rounded-2xl p-4 text-center">
-                <div class="text-sm text-gray-600 mb-2">Du</div>
-                <div class="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  {completedToday}
-                </div>
-                <div class="text-sm text-gray-600">Punkte heute</div>
-                <div class="mt-2 text-2xl font-bold {percentage >= otherUserData.percentage ? 'text-green-600' : 'text-orange-600'}">
-                  {percentage}%
-                </div>
-              </div>
-
-              <div class="bg-white rounded-2xl p-4 text-center">
-                <div class="text-sm text-gray-600 mb-2">{otherUser.name}</div>
-                <div class="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                  {otherUserData.completed}
-                </div>
-                <div class="text-sm text-gray-600">Punkte heute</div>
-                <div class="mt-2 text-2xl font-bold {otherUserData.percentage >= percentage ? 'text-green-600' : 'text-orange-600'}">
-                  {otherUserData.percentage}%
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-4 text-center">
-              {#if percentage > otherUserData.percentage}
-                <p class="text-green-700 font-bold text-lg">🎯 Du liegst vorne!</p>
-              {:else if percentage < otherUserData.percentage}
-                <p class="text-orange-700 font-bold text-lg">💪 {otherUser.name} liegt vorne!</p>
-              {:else}
-                <p class="text-blue-700 font-bold text-lg">🤝 Ihr seid gleichauf!</p>
-              {/if}
-            </div>
+            <div class="text-gray-600 mt-2">Tage am Stück!</div>
           </div>
         {/if}
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-            <svg class="w-10 h-10 mx-auto mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            </svg>
-            <div class="text-4xl font-bold text-gray-800 mb-1">{stats.thisMonth}</div>
-            <div class="text-gray-600 font-medium">Punkte diesen Monat</div>
+        <!-- Vergleich mit anderem Spieler -->
+        {#if otherUser && otherUserStats}
+          <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-3xl shadow-xl p-6 mb-6">
+            <h4 class="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <span class="text-2xl">⚔️</span>
+              Direkter Vergleich
+            </h4>
+            
+            <div class="space-y-4">
+              <!-- Monat Vergleich -->
+              <div class="bg-white rounded-2xl p-4">
+                <div class="text-sm text-gray-600 mb-3 text-center font-semibold">Punkte diesen Monat</div>
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="text-center">
+                    <div class="text-sm text-gray-600 mb-1">{currentUser.name}</div>
+                    <div class="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                      {stats.thisMonth}
+                    </div>
+                  </div>
+                  <div class="text-center">
+                    <div class="text-sm text-gray-600 mb-1">{otherUser.name}</div>
+                    <div class="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      {otherUserStats.thisMonth}
+                    </div>
+                  </div>
+                </div>
+                <div class="text-center mt-3">
+                  {#if stats.thisMonth > otherUserStats.thisMonth}
+                    <span class="text-green-700 font-bold">🏆 Du führst!</span>
+                  {:else if stats.thisMonth < otherUserStats.thisMonth}
+                    <span class="text-orange-700 font-bold">💪 {otherUser.name} führt!</span>
+                  {:else}
+                    <span class="text-blue-700 font-bold">🤝 Gleichstand!</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Jahr Vergleich -->
+              <div class="bg-white rounded-2xl p-4">
+                <div class="text-sm text-gray-600 mb-3 text-center font-semibold">Punkte dieses Jahr</div>
+                <div class="grid grid-cols-2 gap-4">
+                  <div class="text-center">
+                    <div class="text-sm text-gray-600 mb-1">{currentUser.name}</div>
+                    <div class="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                      {stats.thisYear}
+                    </div>
+                  </div>
+                  <div class="text-center">
+                    <div class="text-sm text-gray-600 mb-1">{otherUser.name}</div>
+                    <div class="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      {otherUserStats.thisYear}
+                    </div>
+                  </div>
+                </div>
+                <div class="text-center mt-3">
+                  {#if stats.thisYear > otherUserStats.thisYear}
+                    <span class="text-green-700 font-bold">🏆 Du führst!</span>
+                  {:else if stats.thisYear < otherUserStats.thisYear}
+                    <span class="text-orange-700 font-bold">💪 {otherUser.name} führt!</span>
+                  {:else}
+                    <span class="text-blue-700 font-bold">🤝 Gleichstand!</span>
+                  {/if}
+                </div>
+              </div>
+            </div>
           </div>
-
-          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-            <svg class="w-10 h-10 mx-auto mb-3 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <div class="text-4xl font-bold text-gray-800 mb-1">{stats.thisYear}</div>
-            <div class="text-gray-600 font-medium">Punkte dieses Jahr</div>
-          </div>
-
-          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-            <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-            </svg>
-            <div class="text-4xl font-bold text-gray-800 mb-1">{stats.streak}</div>
-            <div class="text-gray-600 font-medium">Tage Streak</div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <h4 class="text-xl font-bold text-gray-800 mb-4">Dein Verlauf</h4>
-          <div class="overflow-x-auto">
-            <table class="w-full">
-              <thead>
-                <tr class="border-b-2 border-gray-200">
-                  <th class="text-left py-3 px-4 text-gray-700 font-semibold">Datum</th>
-                  <th class="text-center py-3 px-4 text-gray-700 font-semibold">Punkte</th>
-                  <th class="text-right py-3 px-4 text-gray-700 font-semibold">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each userHistory as entry}
-                  {@const entryPercentage = Math.round((entry.points / totalToday) * 100)}
-                  <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td class="py-3 px-4 text-gray-700 font-medium">
-                      {formatDate(entry.date)}
-                    </td>
-                    <td class="text-center py-3 px-4">
-                      <span class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 text-white font-bold text-lg">
-                        {entry.points}
-                      </span>
-                    </td>
-                    <td class="text-right py-3 px-4">
-                      <span class="font-bold text-lg {
-                        entryPercentage >= 75 ? 'text-green-600' : 
-                        entryPercentage >= 50 ? 'text-yellow-600' : 
-                        'text-red-600'
-                      }">
-                        {entryPercentage}%
-                      </span>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <button
-          on:click={resetDay}
-          class="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl py-4 shadow-xl transform hover:scale-105 active:scale-95 transition-all duration-300 font-bold text-lg gradient-animate"
-        >
-          Nochmal durchgehen
-        </button>
-
-        <p class="text-center text-gray-600 text-sm mt-4">
-          ✅ Mit Supabase Datenbank verbunden
-        </p>
+        {/if}
       </div>
     </div>
   {/if}
