@@ -544,121 +544,165 @@
       {/if}
     </div>
 
- {:else if currentScreen === 'overview'}
-  <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6">
-    <div class="max-w-4xl mx-auto">
+  {:else if currentScreen === 'overview'}
+    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6">
+      <div class="max-w-4xl mx-auto">
+        <div class="flex items-center justify-between mb-8">
+          <button
+            on:click={resetDay}
+            class="p-3 hover:bg-white/50 rounded-xl transition-colors active:scale-95"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <h2 class="text-2xl font-bold text-gray-800">{currentUser?.name}</h2>
+          <button
+            on:click={resetToUserSelect}
+            class="px-4 py-2 bg-white/50 hover:bg-white/70 rounded-xl transition-colors text-sm font-medium active:scale-95"
+          >
+            Wechseln
+          </button>
+        </div>
 
-      <!-- Header -->
-      <div class="flex items-center justify-between mb-8">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 mb-6 text-center">
+          <div class="text-7xl mb-4 animate-bounce-once">
+            {percentage >= 80 ? '🎉' : percentage >= 50 ? '👍' : '💪'}
+          </div>
+          <h3 class="text-3xl font-bold text-gray-800 mb-2">
+            {completedToday} von {totalToday} geschafft!
+          </h3>
+          <p class="text-gray-600 text-lg mb-6">{percentage}% heute erreicht</p>
+          
+          <div class="w-full bg-gray-200 rounded-full h-4 shadow-inner">
+            <div 
+              class="bg-gradient-to-r from-green-400 to-green-600 h-4 rounded-full transition-all duration-1000 shadow-sm"
+              style="width: {percentage}%"
+            ></div>
+          </div>
+        </div>
+
+        {#if otherUser && otherUserData}
+          <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-3xl shadow-xl p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <span class="text-2xl">🏆</span>
+                Vergleich mit {otherUser.name}
+              </h4>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-white rounded-2xl p-4 text-center">
+                <div class="text-sm text-gray-600 mb-2">Du</div>
+                <div class="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                  {completedToday}
+                </div>
+                <div class="text-sm text-gray-600">Punkte heute</div>
+                <div class="mt-2 text-2xl font-bold {percentage >= otherUserData.percentage ? 'text-green-600' : 'text-orange-600'}">
+                  {percentage}%
+                </div>
+              </div>
+
+              <div class="bg-white rounded-2xl p-4 text-center">
+                <div class="text-sm text-gray-600 mb-2">{otherUser.name}</div>
+                <div class="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                  {otherUserData.completed}
+                </div>
+                <div class="text-sm text-gray-600">Punkte heute</div>
+                <div class="mt-2 text-2xl font-bold {otherUserData.percentage >= percentage ? 'text-green-600' : 'text-orange-600'}">
+                  {otherUserData.percentage}%
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 text-center">
+              {#if percentage > otherUserData.percentage}
+                <p class="text-green-700 font-bold text-lg">🎯 Du liegst vorne!</p>
+              {:else if percentage < otherUserData.percentage}
+                <p class="text-orange-700 font-bold text-lg">💪 {otherUser.name} liegt vorne!</p>
+              {:else}
+                <p class="text-blue-700 font-bold text-lg">🤝 Ihr seid gleichauf!</p>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
+            <svg class="w-10 h-10 mx-auto mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            <div class="text-4xl font-bold text-gray-800 mb-1">{stats.thisMonth}</div>
+            <div class="text-gray-600 font-medium">Punkte diesen Monat</div>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
+            <svg class="w-10 h-10 mx-auto mb-3 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div class="text-4xl font-bold text-gray-800 mb-1">{stats.thisYear}</div>
+            <div class="text-gray-600 font-medium">Punkte dieses Jahr</div>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
+            <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+            </svg>
+            <div class="text-4xl font-bold text-gray-800 mb-1">{stats.streak}</div>
+            <div class="text-gray-600 font-medium">Tage Streak</div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
+          <h4 class="text-xl font-bold text-gray-800 mb-4">Dein Verlauf</h4>
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead>
+                <tr class="border-b-2 border-gray-200">
+                  <th class="text-left py-3 px-4 text-gray-700 font-semibold">Datum</th>
+                  <th class="text-center py-3 px-4 text-gray-700 font-semibold">Punkte</th>
+                  <th class="text-right py-3 px-4 text-gray-700 font-semibold">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each userHistory as entry}
+                  {@const entryPercentage = Math.round((entry.points / totalToday) * 100)}
+                  <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td class="py-3 px-4 text-gray-700 font-medium">
+                      {formatDate(entry.date)}
+                    </td>
+                    <td class="text-center py-3 px-4">
+                      <span class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 text-white font-bold text-lg">
+                        {entry.points}
+                      </span>
+                    </td>
+                    <td class="text-right py-3 px-4">
+                      <span class="font-bold text-lg {
+                        entryPercentage >= 75 ? 'text-green-600' : 
+                        entryPercentage >= 50 ? 'text-yellow-600' : 
+                        'text-red-600'
+                      }">
+                        {entryPercentage}%
+                      </span>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <button
           on:click={resetDay}
-          class="p-3 hover:bg-white/50 rounded-xl transition-colors active:scale-95"
+          class="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl py-4 shadow-xl transform hover:scale-105 active:scale-95 transition-all duration-300 font-bold text-lg gradient-animate"
         >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-          </svg>
+          Nochmal durchgehen
         </button>
 
-        <h2 class="text-2xl font-bold text-gray-800">{currentUser?.name}</h2>
-
-        <button
-          on:click={resetToUserSelect}
-          class="px-4 py-2 bg-white/50 hover:bg-white/70 rounded-xl transition-colors text-sm font-medium active:scale-95"
-        >
-          Wechseln
-        </button>
+        <p class="text-center text-gray-600 text-sm mt-4">
+          ✅ Mit Supabase Datenbank verbunden
+        </p>
       </div>
-
-      <!-- Gesamtstatistik -->
-      <div class="bg-white rounded-3xl shadow-2xl p-8 mb-6 text-center">
-        <div class="text-7xl mb-4 animate-bounce-once">
-          {percentage >= 80 ? '🎉' : percentage >= 50 ? '👍' : '💪'}
-        </div>
-        <h3 class="text-3xl font-bold text-gray-800 mb-2">
-          {completedToday} von {totalToday} geschafft!
-        </h3>
-        <p class="text-gray-600 text-lg mb-6">{percentage}% heute erreicht</p>
-
-        <div class="w-full bg-gray-200 rounded-full h-4 shadow-inner">
-          <div
-            class="bg-gradient-to-r from-green-400 to-green-600 h-4 rounded-full transition-all duration-1000 shadow-sm"
-            style="width: {percentage}%"
-          ></div>
-        </div>
-      </div>
-
-      <!-- Vergleich mit anderem Benutzer -->
-      {#if otherUser && otherUserData}
-        <div class="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-3xl shadow-xl p-6 mb-6">
-          <div class="flex items-center justify-between mb-4">
-            <h4 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-              <span class="text-2xl">🏆</span>
-              Vergleich mit {otherUser.name}
-            </h4>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
-            <div class="bg-white rounded-2xl p-4 text-center">
-              <div class="text-sm text-gray-600 mb-2">Du</div>
-              <div class="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                {completedToday}
-              </div>
-              <div class="text-sm text-gray-600">Punkte heute</div>
-              <div class="mt-2 text-2xl font-bold {percentage >= otherUserData.percentage ? 'text-green-600' : 'text-orange-600'}">
-                {percentage}%
-              </div>
-            </div>
-
-            <div class="bg-white rounded-2xl p-4 text-center">
-              <div class="text-sm text-gray-600 mb-2">{otherUser.name}</div>
-              <div class="text-4xl font-bold mb-2 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                {otherUserData.completed}
-              </div>
-              <div class="text-sm text-gray-600">Punkte heute</div>
-              <div class="mt-2 text-2xl font-bold {otherUserData.percentage >= percentage ? 'text-green-600' : 'text-orange-600'}">
-                {otherUserData.percentage}%
-              </div>
-            </div>
-          </div>
-
-          <div class="mt-4 text-center">
-            {#if percentage > otherUserData.percentage}
-              <p class="text-green-700 font-bold text-lg">🎯 Du liegst vorne!</p>
-            {:else if percentage < otherUserData.percentage}
-              <p class="text-orange-700 font-bold text-lg">💪 {otherUser.name} liegt vorne!</p>
-            {:else}
-              <p class="text-blue-700 font-bold text-lg">🤝 Ihr seid gleichauf!</p>
-            {/if}
-          </div>
-        </div>
-      {/if}
-
-      <!-- Statistik-Karten -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-          <svg class="w-10 h-10 mx-auto mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2h-3.28a2 2 0 01-1.42-.59l-1.42-1.42A2 2 0 0011.28 3H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-          </svg>
-          <div class="text-2xl font-bold">{stats.thisMonth}</div>
-          <p class="text-gray-600">Dieser Monat</p>
-        </div>
-
-        <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-          <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.1 0-2 .9-2 2v6a2 2 0 104 0v-6c0-1.1-.9-2-2-2zm0-4a4 4 0 00-4 4v6a4 4 0 108 0v-6a4 4 0 00-4-4z"/>
-          </svg>
-          <div class="text-2xl font-bold">{stats.thisYear}</div>
-          <p class="text-gray-600">Dieses Jahr</p>
-        </div>
-
-        <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-          <svg class="w-10 h-10 mx-auto mb-3 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h-2v-3a3 3 0 00-6 0v3H7V8h10v9zm-5 5a5 5 0 110-10 5 5 0 010 10z"/>
-          </svg>
-          <div class="text-2xl font-bold">{stats.streak}</div>
-          <p class="text-gray-600">Streak</p>
-        </div>
-      </div>
-
-    </div> <!-- closes max-w-4xl -->
-  </div> <!-- closes min-h-screen -->
+    </div>
+  {/if}
+</div>
