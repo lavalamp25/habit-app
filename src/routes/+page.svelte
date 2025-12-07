@@ -627,7 +627,43 @@
           </div>
         {/if}
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
-            <svg class="w-10 h-10 mx-auto mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
+    <svg class="w-10 h-10 mx-auto mb-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M8 7V3m8 4V3m-9 8h10m-12 8h14a2 2 0 002-2V7a2 2 0 00-2-2h-3.28a2 2 0 01-1.42-.59l-1.42-1.42A2 2 0 0011.28 3H8a2 2 0 00-2 2v14a2 2 0 002 2z"
+      />
+    </svg>
+    <div class="text-2xl font-bold">{stats.thisMonth}</div>
+    <p class="text-gray-600">Dieser Monat</p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
+    <svg class="w-10 h-10 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M12 8c-1.1 0-2 .9-2 2v6a2 2 0 104 0v-6c0-1.1-.9-2-2-2zm0-4a4 4 0 00-4 4v6a4 4 0 108 0v-6a4 4 0 00-4-4z"
+      />
+    </svg>
+    <div class="text-2xl font-bold">{stats.thisYear}</div>
+    <p class="text-gray-600">Dieses Jahr</p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-xl p-6 text-center transform hover:scale-105 transition-all">
+    <svg class="w-10 h-10 mx-auto mb-3 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M17 17h-2v-3a3 3 0 00-6 0v3H7V8h10v9zm-5 5a5 5 0 110-10 5 5 0 010 10z"
+      />
+    </svg>
+    <div class="text-2xl font-bold">{stats.streak}</div>
+    <p class="text-gray-600">Streak</p>
+  </div>
+</div>
