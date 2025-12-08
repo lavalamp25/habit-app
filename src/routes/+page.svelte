@@ -20,23 +20,16 @@
   let selectedMonth = new Date().getMonth();
   let selectedYear = new Date().getFullYear();
 
-  // Definition der Stats mit neuem Feld 'today' für die Top-Anzeige
-  let stats = { today: 0, thisMonth: 0, thisYear: 0, streak: 0 }; 
-  let otherUserData = null;
-  let otherUserStats = { thisMonth: 0, thisYear: 0 };
-
   // reactive
   $: currentHabit = habits[currentCardIndex];
   $: currentAnswer = todayAnswers[currentHabit?.id];
   $: completedToday = Object.values(todayAnswers).filter(Boolean).length;
-  // Der Wert "maxPointsToday" bleibt lokal, da er die maximale Punktzahl des Tages angibt
-  $: maxPointsToday = habits.reduce((sum, h) => sum + (h.points || 1), 0);
-  // Die Prozentzahl basiert nun auf der DB-geladenen Punktzahl für heute (stats.today)
-  $: percentage = maxPointsToday > 0 ? Math.round((stats.today / maxPointsToday) * 100) : 0;
+  // Für die Anzeige im Dashboard nutzen wir die lokalen Antworten
+  $: earnedPointsToday = habits.length > 0 ? calculateEarnedPoints() : 0;
+  $: maxPointsToday = habits.length > 0 ? habits.reduce((sum, h) => sum + (h.points || 1), 0) : 0;
+  $: percentage = maxPointsToday > 0 ? Math.round((earnedPointsToday / maxPointsToday) * 100) : 0;
   $: otherUser = currentUser ? users.find(u => u.id !== currentUser.id) : null;
 
-  // Diese Funktion wird nun nicht mehr für die Dashboard-Anzeige verwendet, 
-  // sondern nur noch für die Anzeige während des Ausfüllens der Habits
   function calculateEarnedPoints() {
     let points = 0;
     habits.forEach(habit => {
@@ -90,23 +83,28 @@
       todayAnswers = {};
       data?.forEach(log => {
         todayAnswers[log.habit_id] = !!log.completed;
+        todayAnswers = { ...todayAnswers };
       });
     }
   }
 
-  // Hilfsfunktion zum Aktualisieren der Punkte-Tabelle
+  // --- KORRIGIERTE FUNKTION: Punkteberechnung ---
   async function updateDailyPoints(userId, date) {
+    // 1. Nur die Logs laden (habit_id und completed), KEIN Join auf habits, da fehleranfällig
     const { data: logs } = await supabase
       .from('habit_logs')
       .select('habit_id, completed')
       .eq('user_id', userId)
       .eq('date', date);
 
+    // 2. Berechnung LOKAL durchführen anhand des geladenen habits-Arrays
+    // Das ist die sicherste Methode, da wir die Punkte-Werte bereits in 'habits' haben.
     let totalPoints = 0;
 
     if (logs && logs.length > 0) {
       logs.forEach(log => {
         if (log.completed) {
+          // Wir suchen den Habit in unserer lokalen Liste
           const habit = habits.find(h => h.id === log.habit_id);
           if (habit) {
             totalPoints += (habit.points || 1);
@@ -115,6 +113,7 @@
       });
     }
 
+    // 3. Update oder Insert in point_logs
     const { data: existingPointLog } = await supabase
       .from('point_logs')
       .select('id')
@@ -137,17 +136,17 @@
         });
     }
   }
+  // -------------------------------------------------------------
 
-  // --- KORRIGIERT: Datumserzeugung in loadMonthData ---
   async function loadMonthData(userId, month, year) {
-    const startDateObj = new Date(year, month, 1);
-    const endDateObj = new Date(year, month + 1, 0); 
-    const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(endDateObj.getDate()).padStart(2, '0')}`;
+    const startDateObj = new Date(year, month, 1, 12, 0, 0);
+    const endDateObj = new Date(year, month + 1, 0, 12, 0, 0);
+    const startDate = startDateObj.toISOString().split('T')[0];
+    const endDate = endDateObj.toISOString().split('T')[0];
     
     const { data, error } = await supabase
       .from('habit_logs')
-      .select('*, habits(id, title, icon, points)') // Habiteigenschaften für die Anzeige laden
+      .select('*') // Hier brauchen wir keinen Join mehr zwingend für die Logik
       .eq('user_id', userId)
       .gte('date', startDate)
       .lte('date', endDate)
@@ -161,17 +160,11 @@
 
     const daysInMonth = endDateObj.getDate();
     const days = [];
-    
-    // Schleife geht nur über die Tage des aktuellen Monats (1 bis daysInMonth)
     for (let d = 1; d <= daysInMonth; d++) {
-      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      
-      // Die Anzeige wird direkt aus den korrekten Monats-/Tag-Werten erzeugt
-      const display = `${String(d).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.`;
-
-      days.push({
+  const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  days.push({
         date: iso,
-        display: display, 
+        display: formatDate(iso),
         logsByHabit: {}
       });
     }
@@ -191,77 +184,126 @@
 
     monthGrid = days;
   }
-  // ----------------------------------------------------------------------
-
-
-  // --- KORRIGIERT: loadStats liest heute Punkte aus point_logs ---
   async function loadStats(userId) {
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const thisYearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-    
-    // NEU: Heute Punkte aus point_logs laden
-    const { data: todayPointLog } = await supabase
-        .from('point_logs')
-        .select('points')
-        .eq('user_id', userId)
-        .eq('date', today)
-        .single();
-    const todayPoints = todayPointLog?.points || 0;
-    
-    // Monatspunkte aus point_logs laden
-    const { data: monthData } = await supabase
-      .from('point_logs')
-      .select('points')
-      .eq('user_id', userId)
-      .gte('date', thisMonthStart);
-    
-    const monthPoints = monthData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0).toISOString().split('T')[0];
+  const thisYearStart = new Date(now.getFullYear(), 0, 1, 12, 0, 0).toISOString().split('T')[0];
+  
+  // Monatspunkte aus point_logs laden
+  const { data: monthData } = await supabase
+    .from('point_logs')
+    .select('points')
+    .eq('user_id', userId)
+    .gte('date', thisMonthStart);
+  
+  const monthPoints = monthData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
 
-    // Jahrespunkte aus point_logs laden
-    const { data: yearData } = await supabase
-      .from('point_logs')
-      .select('points')
-      .eq('user_id', userId)
-      .gte('date', thisYearStart);
+  // Jahrespunkte aus point_logs laden
+  const { data: yearData } = await supabase
+    .from('point_logs')
+    .select('points')
+    .eq('user_id', userId)
+    .gte('date', thisYearStart);
 
-    const yearPoints = yearData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
-    
-    // Streak
-    const noFapHabit = habits.find(h => h.title.toLowerCase().includes('masturbiert'));
-    let streak = 0;
-    if (noFapHabit) {
-      const { data: streakData } = await supabase
-        .from('habit_logs')
-        .select('date, completed')
-        .eq('user_id', userId)
-        .eq('habit_id', noFapHabit.id)
-        .order('date', { ascending: false });
-      if (streakData) {
-        for (let log of streakData) {
-          if (log.completed) streak++;
-          else break;
-        }
+  const yearPoints = yearData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
+  
+  // Streak (bleibt bei habit_logs)
+  const noFapHabit = habits.find(h => h.title.toLowerCase().includes('masturbiert'));
+  let streak = 0;
+  if (noFapHabit) {
+    const { data: streakData } = await supabase
+      .from('habit_logs')
+      .select('date, completed')
+      .eq('user_id', userId)
+      .eq('habit_id', noFapHabit.id)
+      .order('date', { ascending: false });
+    if (streakData) {
+      for (let log of streakData) {
+        if (log.completed) streak++;
+        else break;
       }
     }
+  }
 
-    stats = {
-      today: todayPoints, // ÜBERGEBEN
+  stats = {
+    thisMonth: monthPoints,
+    thisYear: yearPoints,
+    streak
+  };
+}
+  async function loadStatsForSelectedPeriod(userId, month, year) {
+  try {
+    const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    // ... rest des Codes bleibt gleich
+  const monthEnd = new Date(year, month + 1, 0);
+  const monthEndStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  
+  // Monatspunkte
+  const { data: monthData } = await supabase
+    .from('point_logs')
+    .select('points')
+    .eq('user_id', userId)
+    .gte('date', monthStart)
+    .lte('date', monthEndStr);
+  
+  const monthPoints = monthData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
+
+  // Jahrespunkte
+  const { data: yearData } = await supabase
+    .from('point_logs')
+    .select('points')
+    .eq('user_id', userId)
+    .gte('date', yearStart)
+    .lte('date', yearEnd);
+
+  const yearPoints = yearData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
+  
+  // Streak (bleibt gleich)
+  const noFapHabit = habits.find(h => h.title.toLowerCase().includes('masturbiert'));
+  let streak = 0;
+  if (noFapHabit) {
+    const { data: streakData } = await supabase
+      .from('habit_logs')
+      .select('date, completed')
+      .eq('user_id', userId)
+      .eq('habit_id', noFapHabit.id)
+      .order('date', { ascending: false });
+    if (streakData) {
+      for (let log of streakData) {
+        if (log.completed) streak++;
+        else break;
+      }
+    }
+  }
+
+  stats = {
       thisMonth: monthPoints,
       thisYear: yearPoints,
       streak
     };
+  } catch (error) {
+    console.error('Error loading stats:', error);
+    stats = { thisMonth: 0, thisYear: 0, streak: 0 };
   }
-  // ----------------------------------------------------------------------
+}
 
   async function loadOtherUserStats(otherUserId) {
     const now = new Date();
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const thisYearStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0).toISOString().split('T')[0];
+    const thisYearStart = new Date(now.getFullYear(), 0, 1, 12, 0, 0).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
     
-    // Heute Punkte für den Vergleich laden
+    // Heute Detailansicht (completed/total)
+    const { data: todayLogs } = await supabase
+      .from('habit_logs')
+      .select('completed')
+      .eq('user_id', otherUserId)
+      .eq('date', today);
+    // Hier können wir die Punkte nur schätzen oder wir laden kurz die Habits des anderen Users, 
+    // aber für die Prozentanzeige reicht die Anzahl completed.
+    // Falls Punkte wichtig sind, laden wir point_logs für heute:
     const { data: todayPointLog } = await supabase
         .from('point_logs')
         .select('points')
@@ -270,6 +312,8 @@
         .single();
     
     const todayPoints = todayPointLog?.points || 0;
+    const todayTotal = todayLogs?.length || 0; // Das ist nur die Anzahl der Logs, nicht total possible.
+    // Einfachheitshalber: Prozent ist hier basierend auf den Antworten des Users
     
     // Monat aus point_logs
     const { data: monthData } = await supabase
@@ -287,11 +331,10 @@
       .gte('date', thisYearStart);
     const yearPoints = yearData?.reduce((sum, row) => sum + (row.points || 0), 0) || 0;
 
-    // Hier setzen wir maxPointsToday für den anderen User nicht, daher 0%
     otherUserData = {
       completed: todayPoints,
-      total: 0, 
-      percentage: 0 
+      total: todayTotal, 
+      percentage: 0 // Wird im UI nicht zwingend genutzt oder ist weniger wichtig als Punkte
     };
     otherUserStats = {
       thisMonth: monthPoints,
@@ -313,24 +356,30 @@
   }
 
   async function openMonthView() {
-    loading = true;
-    await loadHabits(currentUser.id);
-    await loadMonthData(currentUser.id, selectedMonth, selectedYear);
-    currentScreen = 'monthView';
-    loading = false;
-  }
+  loading = true;
+  await loadHabits(currentUser.id);
+  await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+  currentScreen = 'monthView';
+  loading = false;
+  // Stats im Hintergrund laden
+  loadStatsForSelectedPeriod(currentUser.id, selectedMonth, selectedYear);
+}
 
   async function openDashboard() {
-    loading = true;
-    await loadHabits(currentUser.id);
-    await loadTodayAnswers(currentUser.id);
-    await loadStats(currentUser.id); // LÄDT nun stats.today korrekt!
-    if (otherUser) {
-      await loadOtherUserStats(otherUser.id);
-    }
-    currentScreen = 'dashboard';
-    loading = false;
+  loading = true;
+  animatePoints = false; // Wichtig: Zuerst auf false setzen
+  await loadHabits(currentUser.id);
+  await loadTodayAnswers(currentUser.id);
+  await loadStats(currentUser.id);
+  if (otherUser) {
+    await loadOtherUserStats(otherUser.id);
   }
+  currentScreen = 'dashboard';
+  loading = false;
+  setTimeout(() => {
+    animatePoints = true;
+  }, 200);
+}
 
   async function handleAnswer(answer) {
     todayAnswers[currentHabit.id] = answer;
@@ -359,8 +408,6 @@
           completed: answer
         });
     }
-    // Nach jeder Antwort wird das Dashboard-Total sofort im Hintergrund aktualisiert
-    await updateDailyPoints(currentUser.id, today);
   }
 
   async function goToNextCard() {
@@ -369,14 +416,14 @@
     } else {
       loading = true;
       
-      // 1. Punkte final berechnen und speichern (wurde schon in handleAnswer gemacht, aber hier zur Sicherheit)
+      // 1. Zuerst Punkte berechnen und speichern
       const today = new Date().toISOString().split('T')[0];
       await updateDailyPoints(currentUser.id, today);
 
       // 2. Dann alles neu laden für das Dashboard
-      await loadHabits(currentUser.id); 
+      await loadHabits(currentUser.id); // Zur Sicherheit
       await loadTodayAnswers(currentUser.id);
-      await loadStats(currentUser.id); // LÄDT nun stats.today korrekt!
+      await loadStats(currentUser.id);
       
       if (otherUser) {
         await loadOtherUserStats(otherUser.id);
@@ -393,8 +440,8 @@
           showStreakPopup = true;
           setTimeout(() => {
             showStreakPopup = false;
-          }, 1500);
-        }, 900);
+          }, 1300);
+        }, 800);
       }, 200);
     }
   }
@@ -406,27 +453,28 @@
   }
 
   async function updateMonthLog(logId, completed, date, habitId) {
-    if (logId) {
-      await supabase
-        .from('habit_logs')
-        .update({ completed })
-        .eq('id', logId);
-    } else {
-      await supabase
-        .from('habit_logs')
-        .insert({
-          habit_id: habitId,
-          user_id: currentUser.id,
-          date,
-          completed
-        });
-    }
-    
-    // Auch hier: Punkte neu berechnen
-    await updateDailyPoints(currentUser.id, date);
-
-    await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+  if (logId) {
+    await supabase
+      .from('habit_logs')
+      .update({ completed })
+      .eq('id', logId);
+  } else {
+    await supabase
+      .from('habit_logs')
+      .insert({
+        habit_id: habitId,
+        user_id: currentUser.id,
+        date,
+        completed
+      });
   }
+  
+  await updateDailyPoints(currentUser.id, date);
+  
+  // Wichtig: In dieser Reihenfolge neu laden
+  await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+  await loadStatsForSelectedPeriod(currentUser.id, selectedMonth, selectedYear);
+}
 
   function resetToUserSelect() {
     currentScreen = 'userSelect';
@@ -467,6 +515,14 @@
     swipeCurrentX = 0;
   }
 
+  function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('de-DE', { 
+      day: '2-digit', 
+      month: '2-digit'
+    });
+  }
+
   function getMonthName(month) {
     const names = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 
                    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
@@ -474,28 +530,42 @@
   }
 
   function animateCounter(element, start, end, duration) {
-    if (!element) return;
-    const range = end - start;
-    const increment = range / (duration / 16);
-    let current = start;
-    const timer = setInterval(() => {
-      current += increment;
-      if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
-        current = end;
-        clearInterval(timer);
-      }
+  if (!element) return;
+  const range = end - start;
+  if (range === 0) {
+    element.textContent = end;
+    return;
+  }
+  const increment = range / (duration / 16);
+  let current = start;
+  const timer = setInterval(() => {
+    current += increment;
+    if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+      current = end;
       element.textContent = Math.floor(current);
-    }, 16);
-  }
+      clearInterval(timer);
+    } else {
+      element.textContent = Math.floor(current);
+    }
+  }, 16);
+}
 
-  $: if (animatePoints) {
-    setTimeout(() => {
-      const monthEl = document.getElementById('month-points');
-      const yearEl = document.getElementById('year-points');
-      if (monthEl) animateCounter(monthEl, 0, stats.thisMonth, 1200);
-      if (yearEl) animateCounter(yearEl, 0, stats.thisYear, 1600);
-    }, 100);
-  }
+  $: if (animatePoints && stats.thisMonth !== undefined && stats.thisYear !== undefined) {
+  setTimeout(() => {
+    const monthEl = document.getElementById('month-points');
+    const yearEl = document.getElementById('year-points');
+    if (monthEl && yearEl) {
+      monthEl.textContent = '0';
+      yearEl.textContent = '0';
+      animateCounter(monthEl, 0, stats.thisMonth, 1200);
+      animateCounter(yearEl, 0, stats.thisYear, 1600);
+    }
+  }, 100);
+}
+
+  let stats = { thisMonth: 0, thisYear: 0, streak: 0 };
+  let otherUserData = null;
+  let otherUserStats = { thisMonth: 0, thisYear: 0 };
 </script>
 
 <svelte:head>
@@ -530,6 +600,35 @@
       50% { transform: scale(1.02); }
       100% { transform: scale(1); opacity: 1; }
     }
+    @keyframes streakPulse {
+      0% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1.15); opacity: 1; }
+      75% { transform: scale(0.95); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    @keyframes streakGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(251, 146, 60, 0.4), 0 0 40px rgba(251, 146, 60, 0.2); }
+      50% { box-shadow: 0 0 40px rgba(251, 146, 60, 0.6), 0 0 80px rgba(251, 146, 60, 0.4); }
+    }
+
+    .streak-popup { 
+      animation: streakPulse 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55), streakGlow 2s ease-in-out infinite;
+    }
+
+    @keyframes streakPop {
+      0% { transform: scale(0) rotate(-5deg); opacity: 0; }
+      60% { transform: scale(1.1) rotate(2deg); opacity: 1; }
+      80% { transform: scale(0.95) rotate(-1deg); }
+      100% { transform: scale(1) rotate(0); opacity: 1; }
+    }
+    @keyframes streakOut {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0.8); opacity: 0; }
+    }
+    .streak-enter { animation: streakPop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
+    .streak-exit { animation: streakOut 0.3s ease-out forwards; }
+
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* threads (thin background lines) */
@@ -631,18 +730,15 @@
 
 {#if showStreakPopup}
   <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl p-6 max-w-sm w-full pop-in relative overflow-hidden">
-      <div class="threads" aria-hidden>
-        {#each [6,18,32,48] as left, i}
-          <div class="thread" style="left: {left}px; top: -10%; animation-delay: {i * 0.18}s;"></div>
-        {/each}
-      </div>
-
-      <h3 class="text-2xl font-bold text-gray-800 mb-2">Streak</h3>
-      <div class="text-5xl font-bold mb-1">{stats.streak}</div>
-      <p class="text-gray-600">Tage in Folge</p>
+  <div class="bg-gradient-to-br from-orange-400 to-red-500 rounded-full w-64 h-64 flex flex-col items-center justify-center streak-popup relative overflow-hidden shadow-2xl">
+    <div class="absolute inset-0 bg-gradient-to-br from-yellow-300/20 to-transparent rounded-full"></div>
+    <div class="relative z-10 text-center">
+      <div class="text-white/90 text-xl font-bold mb-2">🔥 Streak 🔥</div>
+      <div class="text-white text-7xl font-bold mb-1">{stats.streak}</div>
+      <div class="text-white/90 text-lg font-semibold">Tage in Folge</div>
     </div>
   </div>
+</div>
 {/if}
 
 <div class="min-h-screen">
@@ -666,7 +762,7 @@
               on:click={() => selectUser(user)}
               class="bg-gradient-to-br {i === 0 ? 'from-blue-400 to-blue-600' : 'from-purple-400 to-purple-600'} hover:opacity-90 text-white rounded-3xl p-10 shadow-2xl transform hover:scale-105 active:scale-95 transition-all duration-300 w-64"
             >
-              <div class="text-7xl mb-4">👤</div>
+              <div class="text-7xl mb-4">👀</div>
               <div class="text-2xl font-bold">{user.name}</div>
             </button>
           {/each}
@@ -679,9 +775,9 @@
       <div class="max-w-md w-full">
         <div class="text-center mb-8">
           <h1 class="text-4xl font-bold text-gray-800 mb-2 animate-bounce-once">
-            Herzlich Willkommen!
+            Herzlich Willkommen! 😎
           </h1>
-          <p class="text-xl text-gray-700">{currentUser?.name}</p>
+          <p class="text-2xl text-grey-700">{currentUser?.name}</p>
         </div>
 
         <div class="space-y-4">
@@ -788,7 +884,7 @@
               <div class="inline-block bg-gradient-to-r from-purple-400 to-pink-400 text-white px-4 py-2 rounded-full font-bold text-sm">
                 {currentHabit.points || 1} Punkt{(currentHabit.points || 1) !== 1 ? 'e' : ''}
               </div>
-              <p class="text-gray-500 text-sm mt-4">👆 Wische oder ziehe für Navigation</p>
+              <p class="text-gray-500 text-sm mt-4">👆 Wische für Navigation</p>
             </div>
 
             <div class="flex gap-4 justify-center mb-8" style="position: relative; z-index: 1;">
@@ -950,26 +1046,26 @@
           <table class="month-grid">
             <thead>
               <tr>
-                <th>Habit / Tag</th>
-                {#each monthGrid as day}
-                  <th title={day.date}>{day.display}</th>
+                <th>Tag</th>
+                {#each habits as habit}
+                  <th title={habit.title}>
+                    <div class="flex flex-col items-center gap-1">
+                      <div class="text-xl">{habit.icon}</div>
+                      <div class="text-xs">{habit.title}</div>
+                      <div class="text-xs text-gray-500">{habit.points || 1}P</div>
+                    </div>
+                  </th>
                 {/each}
               </tr>
             </thead>
             <tbody>
-              {#each habits as habit}
+              {#each monthGrid as day}
                 <tr>
                   <td class="habit-name">
-                    <div class="flex items-center gap-3">
-                      <div class="text-xl">{habit.icon}</div>
-                      <div>
-                        <div>{habit.title}</div>
-                        <div class="text-xs text-gray-500">{habit.points || 1} Punkt{(habit.points || 1) !== 1 ? 'e' : ''}</div>
-                      </div>
-                    </div>
+                    <div class="font-semibold">{day.display}</div>
                   </td>
 
-                  {#each monthGrid as day}
+                  {#each habits as habit}
                     <td>
                       {#if day.logsByHabit[habit.id]}
                         <button
@@ -985,7 +1081,7 @@
                           class="check empty"
                           title="Noch kein Eintrag (klicken zum Setzen)"
                         >
-                          </button>
+                        </button>
                       {/if}
                     </td>
                   {/each}
@@ -993,6 +1089,32 @@
               {/each}
             </tbody>
           </table>
+          <div class="mt-6 grid grid-cols-2 gap-4">
+            <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 text-center">
+              <div class="text-sm text-gray-600 mb-2">Punkte in {getMonthName(selectedMonth)}</div>
+              <div class="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                {(() => {
+                  let sum = 0;
+                  monthGrid.forEach(day => {
+                    habits.forEach(habit => {
+                      const log = day.logsByHabit[habit.id];
+                      if (log && log.completed) {
+                        sum += (habit.points || 1);
+                      }
+                    });
+                  });
+                  return sum;
+                })()}
+              </div>
+            </div>
+            
+            <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 text-center">
+              <div class="text-sm text-gray-600 mb-2">Punkte {selectedYear}</div>
+              <div class="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                {stats.thisYear}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1024,7 +1146,7 @@
             {percentage >= 80 ? '🎉' : percentage >= 50 ? '👍' : '💪'}
           </div>
           <h3 class="text-3xl font-bold text-gray-800 mb-2" style="position: relative; z-index: 1;">
-            {stats.today} von {maxPointsToday} Punkten!
+            {earnedPointsToday} von {maxPointsToday} Punkten!
           </h3>
           <p class="text-gray-600 text-lg mb-6" style="position: relative; z-index: 1;">{percentage}% heute erreicht</p>
           
