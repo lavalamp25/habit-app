@@ -40,7 +40,14 @@
     return points;
   }
 
+  let gsap;
+  
   onMount(async () => {
+    // GSAP vom Window-Objekt holen (wird durch CDN geladen)
+    if (typeof window !== 'undefined') {
+      gsap = window.gsap;
+    }
+    
     await loadUsers();
     loading = false;
   });
@@ -382,6 +389,19 @@
 }
 
   async function handleAnswer(answer) {
+    // 1. ERST Animation abspielen
+    if (cardElement && gsap) {
+      if (answer) {
+        animateSuccess(cardElement);  // ✅ Grüne Spring-Animation
+      } else {
+        animateFailure(cardElement);   // ❌ Rote Wackel-Animation
+      }
+    }
+    
+    // 2. Kurze Pause, damit User die Animation sieht
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // 3. DANN erst Daten speichern (wie vorher)
     todayAnswers[currentHabit.id] = answer;
     todayAnswers = { ...todayAnswers };
 
@@ -393,6 +413,7 @@
       .eq('user_id', currentUser.id)
       .eq('date', today)
       .single();
+
     if (existing) {
       await supabase
         .from('habit_logs')
@@ -411,6 +432,13 @@
   }
 
   async function goToNextCard() {
+    // 1. ERST Swipe-Animation abspielen
+    if (cardElement && gsap) {
+      animate3DSwipe(cardElement, 'left');
+      await new Promise(resolve => setTimeout(resolve, 450));
+    }
+    
+    // 2. DANN zur nächsten Karte wechseln
     if (currentCardIndex < habits.length - 1) {
       currentCardIndex++;
     } else {
@@ -446,7 +474,13 @@
     }
   }
 
-  function goToPreviousCard() {
+  async function goToPreviousCard() {
+    // Karte fliegt nach RECHTS raus (weil wir zurück gehen)
+    if (cardElement && gsap) {
+      animate3DSwipe(cardElement, 'right');
+      await new Promise(resolve => setTimeout(resolve, 450));
+    }
+    
     if (currentCardIndex > 0) {
       currentCardIndex--;
     }
@@ -566,6 +600,206 @@
   let stats = { thisMonth: 0, thisYear: 0, streak: 0 };
   let otherUserData = null;
   let otherUserStats = { thisMonth: 0, thisYear: 0 };
+  
+  // Animation States
+  let cardElement = null;
+  let isAnimating = false;
+  
+  // GSAP Animationen (verbesserte Version)
+  function animateCardEntrance(node) {
+    if (!gsap) return;
+    
+    // Karte kommt 3D rotierend von rechts
+    gsap.fromTo(node, 
+      {
+        rotateY: 90,
+        opacity: 0,
+        scale: 0.7,
+        x: 100
+      },
+      {
+        duration: 0.7,
+        rotateY: 0,
+        opacity: 1,
+        scale: 1,
+        x: 0,
+        ease: "back.out(1.4)",
+        clearProps: "transform,opacity"
+      }
+    );
+  }
+  
+  function animateSuccess(node) {
+    if (!gsap || isAnimating) return;
+    isAnimating = true;
+    
+    const tl = gsap.timeline({
+      onComplete: () => { isAnimating = false; }
+    });
+    
+    // Karte springt hoch mit leichtem Tilt
+    tl.to(node, {
+      duration: 0.2,
+      scale: 1.08,
+      rotateZ: 2, // Z-Achse für 2D-Rotation (nicht Y!)
+      ease: "power2.out"
+    })
+    .to(node, {
+      duration: 0.4,
+      scale: 1,
+      rotateZ: 0,
+      ease: "elastic.out(1, 0.6)"
+    })
+    // Grüner Glow-Effekt
+    .to(node, {
+      duration: 0.25,
+      boxShadow: "0 0 50px rgba(34, 197, 94, 0.8), 0 0 100px rgba(34, 197, 94, 0.4)",
+      ease: "power2.out"
+    }, 0.1)
+    .to(node, {
+      duration: 0.4,
+      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+      ease: "power2.out"
+    });
+    
+    // Icon macht 360° Drehung
+    const icon = node.querySelector('.habit-icon');
+    if (icon) {
+      gsap.fromTo(icon, 
+        { rotate: 0, scale: 1 },
+        {
+          duration: 0.6,
+          rotate: 360,
+          scale: 1.4,
+          ease: "back.out(1.5)",
+          onComplete: () => {
+            gsap.to(icon, {
+              duration: 0.3,
+              scale: 1,
+              ease: "power2.out"
+            });
+          }
+        }
+      );
+    }
+  }
+  
+  function animateFailure(node) {
+    if (!gsap || isAnimating) return;
+    isAnimating = true;
+    
+    const tl = gsap.timeline({
+      onComplete: () => { isAnimating = false; }
+    });
+    
+    // Karte wackelt heftig (Shake)
+    tl.to(node, {
+      duration: 0.08,
+      x: -15,
+      ease: "power2.inOut"
+    })
+    .to(node, {
+      duration: 0.08,
+      x: 15,
+      ease: "power2.inOut"
+    })
+    .to(node, {
+      duration: 0.08,
+      x: -12,
+      ease: "power2.inOut"
+    })
+    .to(node, {
+      duration: 0.08,
+      x: 12,
+      ease: "power2.inOut"
+    })
+    .to(node, {
+      duration: 0.08,
+      x: -8,
+      ease: "power2.inOut"
+    })
+    .to(node, {
+      duration: 0.08,
+      x: 0,
+      ease: "power2.inOut"
+    })
+    // Roter Glow
+    .to(node, {
+      duration: 0.2,
+      boxShadow: "0 0 40px rgba(239, 68, 68, 0.7), 0 0 80px rgba(239, 68, 68, 0.3)",
+      ease: "power2.inOut"
+    }, 0)
+    .to(node, {
+      duration: 0.35,
+      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+      ease: "power2.out"
+    });
+    
+    // Icon wackelt mit
+    const icon = node.querySelector('.habit-icon');
+    if (icon) {
+      tl.to(icon, {
+        duration: 0.1,
+        rotate: -20,
+        ease: "power2.inOut"
+      }, 0)
+      .to(icon, {
+        duration: 0.1,
+        rotate: 20,
+        ease: "power2.inOut"
+      })
+      .to(icon, {
+        duration: 0.1,
+        rotate: -15,
+        ease: "power2.inOut"
+      })
+      .to(icon, {
+        duration: 0.1,
+        rotate: 15,
+        ease: "power2.inOut"
+      })
+      .to(icon, {
+        duration: 0.15,
+        rotate: 0,
+        ease: "power2.out"
+      });
+    }
+  }
+  
+  function animate3DSwipe(node, direction) {
+    if (!gsap) return;
+    
+    const distance = direction === 'left' ? -400 : 400;
+    const rotation = direction === 'left' ? -30 : 30;
+    
+    gsap.to(node, {
+      duration: 0.4,
+      x: distance,
+      rotation: rotation,
+      opacity: 0,
+      ease: "power2.in",
+      onComplete: () => {
+        // Nach Animation: Karte zurücksetzen für nächste Anzeige
+        gsap.set(node, { 
+          x: 0, 
+          rotation: 0, 
+          opacity: 1,
+          clearProps: "all" // Alle GSAP-Properties clearen
+        });
+      }
+    });
+  }
+
+  // Karte animieren wenn sie wechselt
+  $: if (currentHabit && cardElement && gsap && currentScreen === 'dailyHabits') {
+    // Kurze Verzögerung, damit DOM aktualisiert ist
+    setTimeout(() => {
+      if (cardElement) {
+        animateCardEntrance(cardElement);
+      }
+    }, 50);
+  }
+  
 </script>
 
 <svelte:head>
@@ -711,12 +945,46 @@
       background: linear-gradient(90deg,#34d399,#10b981);
       color: white;
     }
+    .check.failed {
+      background: linear-gradient(90deg,#ef4444,#dc2626);
+      color: white;
+      font-weight: bold;
+    }
+    
     .check.empty {
       background: transparent;
       color: transparent;
       border: 1px dashed rgba(0,0,0,0.04);
     }
+
+    /* 3D Performance Optimierung */
+    .habit-card-3d {
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+      will-change: transform;
+    }
+
+    /* Smoother Rendering */
+    * {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    
+    /* 3D Karten-Container */
+    .habit-card {
+      perspective: 1200px;
+    }
+    
+    /* 3D Performance */
+    .habit-card-3d {
+      transform-style: preserve-3d;
+      backface-visibility: hidden;
+      will-change: transform;
+    }
+
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Flip.min.js"></script>
 </svelte:head>
 
 {#if showConfetti}
@@ -858,8 +1126,9 @@
       {#if currentHabit}
         <div class="flex-1 flex items-center justify-center">
           <div 
-            class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full card-enter cursor-grab active:cursor-grabbing select-none relative"
-            style="transform: translateX({isDragging ? swipeCurrentX : 0}px); transition: {isDragging ? 'none' : 'transform 0.3s'}"
+            bind:this={cardElement}
+            class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full cursor-grab active:cursor-grabbing select-none relative habit-card"
+            style="transform-style: preserve-3d;"
             on:mousedown={handlePointerStart}
             on:mousemove={handlePointerMove}
             on:mouseup={handlePointerEnd}
@@ -867,7 +1136,7 @@
             on:touchstart={handlePointerStart}
             on:touchmove={handlePointerMove}
             on:touchend={handlePointerEnd}
-          >
+        >
             <div class="threads" aria-hidden>
               {#each [20,80,140] as left, i}
                 <div class="thread" style="left: {left}px; top: -5%; animation-delay: {i * 0.2}s;"></div>
@@ -875,7 +1144,7 @@
             </div>
 
             <div class="text-center mb-6" style="position: relative; z-index: 1;">
-              <div class="text-7xl mb-4 {currentAnswer !== undefined ? 'animate-bounce-once' : ''}">
+              <div class="habit-icon text-7xl mb-4">
                 {currentHabit.icon}
               </div>
               <h3 class="text-2xl font-bold text-gray-800 mb-2">
@@ -1070,10 +1339,10 @@
                       {#if day.logsByHabit[habit.id]}
                         <button
                           on:click={() => updateMonthLog(day.logsByHabit[habit.id].id, !day.logsByHabit[habit.id].completed, day.date, habit.id)}
-                          class="check done"
+                          class="check {day.logsByHabit[habit.id].completed ? 'done' : 'failed'}"
                           title={day.logsByHabit[habit.id].completed ? 'Erledigt (klicken zum Rückgängig machen)' : 'Nicht erledigt (klicken zum Setzen)'}
                         >
-                          {day.logsByHabit[habit.id].completed ? '✓' : ''}
+                          {day.logsByHabit[habit.id].completed ? '✓' : '✕'}
                         </button>
                       {:else}
                         <button
