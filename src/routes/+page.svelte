@@ -399,7 +399,7 @@
     }
     
     // 2. Kurze Pause, damit User die Animation sieht
-    await new Promise(resolve => setTimeout(resolve, 800));
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     // 3. DANN erst Daten speichern (wie vorher)
     todayAnswers[currentHabit.id] = answer;
@@ -653,7 +653,7 @@
     // Grüner Glow-Effekt
     .to(node, {
       duration: 0.25,
-      boxShadow: "0 0 50px rgba(34, 197, 94, 0.8), 0 0 100px rgba(34, 197, 94, 0.4)",
+      boxShadow: "0 0 100px rgba(34, 197, 94, 0.8), 0 0 150px rgba(34, 197, 94, 0.4)",
       ease: "power2.out"
     }, 0.1)
     .to(node, {
@@ -790,16 +790,10 @@
     });
   }
 
-  // Karte animieren wenn sie wechselt
-  $: if (currentHabit && cardElement && gsap && currentScreen === 'dailyHabits') {
-    // Kurze Verzögerung, damit DOM aktualisiert ist
-    setTimeout(() => {
-      if (cardElement) {
-        animateCardEntrance(cardElement);
-      }
-    }, 50);
+  // Reactive Statement für Karten-Animation beim Wechsel
+  $: if (currentHabit && cardElement && gsap) {
+    animateCardEntrance(cardElement);
   }
-  
 </script>
 
 <svelte:head>
