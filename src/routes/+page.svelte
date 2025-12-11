@@ -10,6 +10,7 @@
   let swipeCurrentX = 0;
   let isDragging = false;
   let showConfetti = false;
+  let showFireworks = false; 
   let showStreakPopup = false;
   let animatePoints = false;
   
@@ -432,15 +433,19 @@
   }
 
   async function goToNextCard() {
-    // 1. ERST Swipe-Animation abspielen
+    // 1. Swipe-Animation starten
     if (cardElement && gsap) {
       animate3DSwipe(cardElement, 'left');
-      await new Promise(resolve => setTimeout(resolve, 450));
+      await new Promise(resolve => setTimeout(resolve, 400));
     }
     
-    // 2. DANN zur nächsten Karte wechseln
+    // 2. Zur nächsten Karte wechseln (Karte ist noch unsichtbar!)
     if (currentCardIndex < habits.length - 1) {
       currentCardIndex++;
+      // 3. Kurze Pause damit DOM aktualisiert wird
+      await new Promise(resolve => setTimeout(resolve, 50));
+      // 4. Jetzt wird automatisch animateCardEntrance aufgerufen (durch $:)
+      //    und isTransitioning wird auf false gesetzt
     } else {
       loading = true;
       
@@ -464,6 +469,7 @@
         setTimeout(() => {
           if (percentage === 100) {
             triggerConfetti();
+            triggerFireworks();  // NEU: Feuerwerk zusätzlich!
           }
           showStreakPopup = true;
           setTimeout(() => {
@@ -475,14 +481,14 @@
   }
 
   async function goToPreviousCard() {
-    // Karte fliegt nach RECHTS raus (weil wir zurück gehen)
     if (cardElement && gsap) {
       animate3DSwipe(cardElement, 'right');
-      await new Promise(resolve => setTimeout(resolve, 450));
+      await new Promise(resolve => setTimeout(resolve, 400));
     }
     
     if (currentCardIndex > 0) {
       currentCardIndex--;
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
 
@@ -525,6 +531,14 @@
     setTimeout(() => {
       showConfetti = false;
     }, 4000);
+  }
+
+   // NEU: Feuerwerk-Animation
+  function triggerFireworks() {
+    showFireworks = true;
+    setTimeout(() => {
+      showFireworks = false;
+    }, 5000); // 5 Sekunden spektakuläre Show
   }
 
   function handlePointerStart(e) {
@@ -604,6 +618,7 @@
   // Animation States
   let cardElement = null;
   let isAnimating = false;
+  let isTransitioning = false; // NEU: Verhindert Aufblitzen
   
   // GSAP Animationen (verbesserte Version)
   function animateCardEntrance(node) {
@@ -624,7 +639,10 @@
         scale: 1,
         x: 0,
         ease: "back.out(1.4)",
-        clearProps: "transform,opacity"
+        clearProps: "transform,opacity",
+        onStart: () => {
+          isTransitioning = false; // Übergang beendet, neue Karte ist da
+        }
       }
     );
   }
@@ -779,12 +797,13 @@
       opacity: 0,
       ease: "power2.in",
       onComplete: () => {
-        // Nach Animation: Karte zurücksetzen für nächste Anzeige
+        // JETZT erst unsichtbar machen (nach der Animation!)
+        isTransitioning = true;
+        
         gsap.set(node, { 
+          opacity: 0,
           x: 0, 
-          rotation: 0, 
-          opacity: 1,
-          clearProps: "all" // Alle GSAP-Properties clearen
+          rotation: 0
         });
       }
     });
@@ -921,6 +940,15 @@
       font-size: 12px;
       white-space: nowrap;
     }
+    
+    /* Jede zweite Zeile grau hinterlegen */
+    .month-grid tbody tr:nth-child(even) {
+      background-color: rgba(0, 0, 0, 0.06);
+    }
+    
+    .month-grid tbody tr:hover {
+      background-color: rgba(0, 0, 0, 0.12);
+    }
     .habit-name {
       text-align: left;
       padding-left: 12px;
@@ -976,6 +1004,160 @@
       will-change: transform;
     }
 
+    /* Karte unsichtbar während Übergang */
+    .invisible {
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
+
+    /* === FIREWORK ANIMATIONS === */
+    @keyframes fireworkLaunch {
+      0% { 
+        transform: translateY(100vh) scale(0.5); 
+        opacity: 1; 
+      }
+      60% { 
+        transform: translateY(20vh) scale(0.8); 
+        opacity: 1; 
+      }
+      100% { 
+        transform: translateY(20vh) scale(1); 
+        opacity: 0; 
+      }
+    }
+    
+    @keyframes fireworkExplosion {
+      0% { 
+        transform: scale(0) rotate(0deg); 
+        opacity: 1; 
+      }
+      50% { 
+        transform: scale(1.5) rotate(180deg); 
+        opacity: 0.8; 
+      }
+      100% { 
+        transform: scale(2.5) rotate(360deg); 
+        opacity: 0; 
+      }
+    }
+    
+    @keyframes particleFly {
+      0% { 
+        transform: translate(0, 0) scale(1); 
+        opacity: 1; 
+      }
+      100% { 
+        transform: translate(var(--tx), var(--ty)) scale(0); 
+        opacity: 0; 
+      }
+    }
+    
+    @keyframes screenFlash {
+      0%, 100% { opacity: 0; }
+      50% { opacity: 0.8; }
+    }
+    
+    @keyframes shakeScreen {
+      0%, 100% { transform: translate(0, 0); }
+      10% { transform: translate(-5px, 2px); }
+      20% { transform: translate(5px, -2px); }
+      30% { transform: translate(-3px, -3px); }
+      40% { transform: translate(3px, 3px); }
+      50% { transform: translate(-2px, 1px); }
+      60% { transform: translate(2px, -1px); }
+      70% { transform: translate(-1px, -2px); }
+      80% { transform: translate(1px, 2px); }
+      90% { transform: translate(-1px, 1px); }
+    }
+    
+    @keyframes perfectTextEnter {
+      0% { 
+        transform: scale(0) rotate(-180deg); 
+        opacity: 0; 
+      }
+      60% { 
+        transform: scale(1.2) rotate(10deg); 
+        opacity: 1; 
+      }
+      80% { 
+        transform: scale(0.95) rotate(-5deg); 
+      }
+      100% { 
+        transform: scale(1) rotate(0deg); 
+        opacity: 1; 
+      }
+    }
+    
+    .firework-container {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    
+    .screen-flash {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,215,0,0.4) 100%);
+      animation: screenFlash 0.3s ease-out;
+      z-index: 10000;
+    }
+    
+    .screen-shake {
+      animation: shakeScreen 0.5s ease-in-out;
+    }
+    
+    .firework {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      animation: fireworkLaunch 1s ease-out forwards;
+    }
+    
+    .firework-burst {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      border: 3px solid;
+      animation: fireworkExplosion 0.8s ease-out forwards;
+    }
+    
+    .firework-particle {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      animation: particleFly 1.2s ease-out forwards;
+    }
+    
+    .perfect-text {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10001;
+      animation: perfectTextEnter 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+      text-shadow: 0 0 20px rgba(255, 215, 0, 0.8),
+                   0 0 40px rgba(255, 215, 0, 0.6),
+                   0 0 60px rgba(255, 215, 0, 0.4);
+    }
+    
+    .glow-ring {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 300px;
+      height: 300px;
+      margin: -150px 0 0 -150px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 215, 0, 0.6);
+      animation: fireworkExplosion 1.5s ease-out infinite;
+      z-index: 9998;
+    }
+    
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Flip.min.js"></script>
@@ -988,6 +1170,77 @@
       style="left: {Math.random() * 100}%; top: -10px; background-color: {['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#fb923c'][Math.floor(Math.random() * 6)]}; animation-delay: {Math.random() * 0.5}s; animation-duration: {2 + Math.random() * 2}s;"
     ></div>
   {/each}
+{/if}
+
+<!-- NEU: FIREWORK SPECTACLE -->
+{#if showFireworks}
+  <div class="firework-container">
+    <!-- Screen Flash (weißer Blitz) -->
+    <div class="screen-flash"></div>
+    
+    <!-- Goldener Glow Ring -->
+    <div class="glow-ring"></div>
+    
+    <!-- "PERFEKT! 100%" Text -->
+    <div class="perfect-text">
+      <div class="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-orange-500 mb-2">
+        PERFEKT!
+      </div>
+      <div class="text-5xl font-bold text-white drop-shadow-lg">
+        🎯 100% 🎯
+      </div>
+    </div>
+    
+    <!-- Feuerwerks-Raketen (5 Stück) -->
+    {#each Array(5) as _, i}
+      <div 
+        class="firework" 
+        style="
+          left: {20 + i * 15}%; 
+          background: {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
+          animation-delay: {i * 0.3}s;
+          box-shadow: 0 0 20px {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
+        "
+      ></div>
+    {/each}
+    
+    <!-- Explosions-Ringe (5 Stück, jeweils 0.6s nach Rakete) -->
+    {#each Array(5) as _, i}
+      <div 
+        class="firework-burst" 
+        style="
+          left: {20 + i * 15}%; 
+          top: 20vh;
+          border-color: {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
+          animation-delay: {i * 0.3 + 0.6}s;
+          box-shadow: 0 0 30px {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
+        "
+      ></div>
+    {/each}
+    
+    <!-- Partikel-Explosion (200 Partikel!) -->
+    {#each Array(200) as _, i}
+      {@const angle = (i / 200) * Math.PI * 2}
+      {@const distance = 150 + Math.random() * 200}
+      {@const tx = Math.cos(angle) * distance}
+      {@const ty = Math.sin(angle) * distance}
+      {@const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181', '#FFA07A', '#98D8C8', '#F7DC6F']}
+      {@const burstIndex = Math.floor(i / 40)}
+      
+      <div 
+        class="firework-particle" 
+        style="
+          left: {20 + burstIndex * 15}%; 
+          top: 20vh;
+          background: {colors[Math.floor(Math.random() * colors.length)]};
+          --tx: {tx}px;
+          --ty: {ty}px;
+          animation-delay: {burstIndex * 0.3 + 0.7 + Math.random() * 0.2}s;
+          box-shadow: 0 0 10px {colors[Math.floor(Math.random() * colors.length)]};
+        "
+      ></div>
+    {/each}
+  </div>
 {/if}
 
 {#if showStreakPopup}
@@ -1122,6 +1375,7 @@
           <div 
             bind:this={cardElement}
             class="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full cursor-grab active:cursor-grabbing select-none relative habit-card"
+            class:invisible={isTransitioning}
             style="transform-style: preserve-3d;"
             on:mousedown={handlePointerStart}
             on:mousemove={handlePointerMove}
