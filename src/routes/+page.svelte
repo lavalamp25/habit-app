@@ -1002,30 +1002,22 @@
     
     /* === ANIMATED GRADIENT BACKGROUND === */
     @keyframes gradientFlow {
-      0% { 
-        background-position: 0% 50%; 
-      }
-      50% { 
-        background-position: 100% 50%; 
-      }
-      100% { 
-        background-position: 0% 50%; 
-      }
+      0% { background-position: 50% 0%; }
+      50% { background-position: 50% 100%; }
+      100% { background-position: 50% 0%; }
     }
     
     .animated-bg {
       background: linear-gradient(
-        135deg,
-        #c7d2fe 0%,    /* Indigo-200 (etwas kräftiger) */
-        #ddd6fe 15%,   /* Purple-200 */
-        #e9d5ff 30%,   /* Purple-200/Pink Übergang */
-        #f0abfc 45%,   /* Pink-300 (kräftiger) */
-        #ddd6fe 60%,   /* Purple-200 */
-        #c7d2fe 75%,   /* Indigo-200 */
-        #e9d5ff 90%,   /* Purple-200 */
-        #f0abfc 100%   /* Pink-300 */
+        180deg,
+        #a5b4fc 0%,    /* Indigo-300 (kräftiger!) */
+        #ddd6fe 20%,   /* Purple-200 bleibt */
+        #e9d5ff 40%,   /* Lila-200 bleibt */
+        #ddd6fe 60%,   /* Purple-200 bleibt */
+        #a5b4fc 80%,   /* Indigo-300 (kräftiger!) */
+        #ddd6fe 100%   /* Purple-200 bleibt */
       );
-      background-size: 400% 400%;
+      background-size: 100% 400%;
       animation: gradientFlow 20s ease infinite;
     }
     
