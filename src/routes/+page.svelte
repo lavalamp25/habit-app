@@ -10,7 +10,6 @@
   let swipeCurrentX = 0;
   let isDragging = false;
   let showConfetti = false;
-  let showFireworks = false; 
   let showStreakPopup = false;
   let animatePoints = false;
   
@@ -469,7 +468,6 @@
         setTimeout(() => {
           if (percentage === 100) {
             triggerConfetti();
-            triggerFireworks();  // NEU: Feuerwerk zusätzlich!
           }
           showStreakPopup = true;
           setTimeout(() => {
@@ -530,15 +528,7 @@
     showConfetti = true;
     setTimeout(() => {
       showConfetti = false;
-    }, 4000);
-  }
-
-   // NEU: Feuerwerk-Animation
-  function triggerFireworks() {
-    showFireworks = true;
-    setTimeout(() => {
-      showFireworks = false;
-    }, 5000); // 5 Sekunden spektakuläre Show
+    }, 6000);
   }
 
   function handlePointerStart(e) {
@@ -1009,238 +999,70 @@
       visibility: hidden !important;
       opacity: 0 !important;
     }
-
-    /* === FIREWORK ANIMATIONS === */
-    @keyframes fireworkLaunch {
-      0% { 
-        transform: translateY(100vh) scale(0.5); 
-        opacity: 1; 
-      }
-      60% { 
-        transform: translateY(20vh) scale(0.8); 
-        opacity: 1; 
-      }
-      100% { 
-        transform: translateY(20vh) scale(1); 
-        opacity: 0; 
-      }
-    }
     
-    @keyframes fireworkExplosion {
+    /* === ANIMATED GRADIENT BACKGROUND === */
+    @keyframes gradientFlow {
       0% { 
-        transform: scale(0) rotate(0deg); 
-        opacity: 1; 
+        background-position: 0% 50%; 
       }
       50% { 
-        transform: scale(1.5) rotate(180deg); 
-        opacity: 0.8; 
+        background-position: 100% 50%; 
       }
       100% { 
-        transform: scale(2.5) rotate(360deg); 
-        opacity: 0; 
+        background-position: 0% 50%; 
       }
     }
     
-    @keyframes particleFly {
-      0% { 
-        transform: translate(0, 0) scale(1); 
-        opacity: 1; 
-      }
-      100% { 
-        transform: translate(var(--tx), var(--ty)) scale(0); 
-        opacity: 0; 
-      }
+    .animated-bg {
+      background: linear-gradient(
+        135deg,
+        #c7d2fe 0%,    /* Indigo-200 (etwas kräftiger) */
+        #ddd6fe 15%,   /* Purple-200 */
+        #e9d5ff 30%,   /* Purple-200/Pink Übergang */
+        #f0abfc 45%,   /* Pink-300 (kräftiger) */
+        #ddd6fe 60%,   /* Purple-200 */
+        #c7d2fe 75%,   /* Indigo-200 */
+        #e9d5ff 90%,   /* Purple-200 */
+        #f0abfc 100%   /* Pink-300 */
+      );
+      background-size: 400% 400%;
+      animation: gradientFlow 20s ease infinite;
     }
     
-    @keyframes screenFlash {
-      0%, 100% { opacity: 0; }
-      50% { opacity: 0.8; }
+    /* Für dunklere Variante (optional) */
+    .animated-bg-alt {
+      background: linear-gradient(
+        135deg,
+        #dbeafe 0%,
+        #93c5fd 25%,
+        #e0f2fe 50%,
+        #ffffff 75%,
+        #dbeafe 100%
+      );
+      background-size: 300% 300%;
+      animation: gradientFlow 15s ease infinite;
     }
-    
-    @keyframes shakeScreen {
-      0%, 100% { transform: translate(0, 0); }
-      10% { transform: translate(-5px, 2px); }
-      20% { transform: translate(5px, -2px); }
-      30% { transform: translate(-3px, -3px); }
-      40% { transform: translate(3px, 3px); }
-      50% { transform: translate(-2px, 1px); }
-      60% { transform: translate(2px, -1px); }
-      70% { transform: translate(-1px, -2px); }
-      80% { transform: translate(1px, 2px); }
-      90% { transform: translate(-1px, 1px); }
-    }
-    
-    @keyframes perfectTextEnter {
-      0% { 
-        transform: scale(0) rotate(-180deg); 
-        opacity: 0; 
-      }
-      60% { 
-        transform: scale(1.2) rotate(10deg); 
-        opacity: 1; 
-      }
-      80% { 
-        transform: scale(0.95) rotate(-5deg); 
-      }
-      100% { 
-        transform: scale(1) rotate(0deg); 
-        opacity: 1; 
-      }
-    }
-    
-    .firework-container {
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      pointer-events: none;
-      overflow: hidden;
-    }
-    
-    .screen-flash {
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,215,0,0.4) 100%);
-      animation: screenFlash 0.3s ease-out;
-      z-index: 10000;
-    }
-    
-    .screen-shake {
-      animation: shakeScreen 0.5s ease-in-out;
-    }
-    
-    .firework {
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      animation: fireworkLaunch 1s ease-out forwards;
-    }
-    
-    .firework-burst {
-      position: absolute;
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      border: 3px solid;
-      animation: fireworkExplosion 0.8s ease-out forwards;
-    }
-    
-    .firework-particle {
-      position: absolute;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      animation: particleFly 1.2s ease-out forwards;
-    }
-    
-    .perfect-text {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 10001;
-      animation: perfectTextEnter 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
-      text-shadow: 0 0 20px rgba(255, 215, 0, 0.8),
-                   0 0 40px rgba(255, 215, 0, 0.6),
-                   0 0 60px rgba(255, 215, 0, 0.4);
-    }
-    
-    .glow-ring {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      width: 300px;
-      height: 300px;
-      margin: -150px 0 0 -150px;
-      border-radius: 50%;
-      border: 4px solid rgba(255, 215, 0, 0.6);
-      animation: fireworkExplosion 1.5s ease-out infinite;
-      z-index: 9998;
-    }
-    
+
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Flip.min.js"></script>
 </svelte:head>
 
 {#if showConfetti}
-  {#each Array(80) as _, i}
+  {#each Array(600) as _, i}
     <div 
       class="confetti-piece"
-      style="left: {Math.random() * 100}%; top: -10px; background-color: {['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#fb923c'][Math.floor(Math.random() * 6)]}; animation-delay: {Math.random() * 0.5}s; animation-duration: {2 + Math.random() * 2}s;"
+      style="
+        left: {Math.random() * 100}%; 
+        top: -10px; 
+        background-color: {['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#fb923c', '#ec4899', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#3b82f6'][Math.floor(Math.random() * 12)]}; 
+        animation-delay: {Math.random() * 0.8}s; 
+        animation-duration: {2.5 + Math.random() * 2.5}s;
+        width: {8 + Math.random() * 6}px;
+        height: {8 + Math.random() * 6}px;
+      "
     ></div>
   {/each}
-{/if}
-
-<!-- NEU: FIREWORK SPECTACLE -->
-{#if showFireworks}
-  <div class="firework-container">
-    <!-- Screen Flash (weißer Blitz) -->
-    <div class="screen-flash"></div>
-    
-    <!-- Goldener Glow Ring -->
-    <div class="glow-ring"></div>
-    
-    <!-- "PERFEKT! 100%" Text -->
-    <div class="perfect-text">
-      <div class="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-orange-500 mb-2">
-        PERFEKT!
-      </div>
-      <div class="text-5xl font-bold text-white drop-shadow-lg">
-        🎯 100% 🎯
-      </div>
-    </div>
-    
-    <!-- Feuerwerks-Raketen (5 Stück) -->
-    {#each Array(5) as _, i}
-      <div 
-        class="firework" 
-        style="
-          left: {20 + i * 15}%; 
-          background: {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
-          animation-delay: {i * 0.3}s;
-          box-shadow: 0 0 20px {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
-        "
-      ></div>
-    {/each}
-    
-    <!-- Explosions-Ringe (5 Stück, jeweils 0.6s nach Rakete) -->
-    {#each Array(5) as _, i}
-      <div 
-        class="firework-burst" 
-        style="
-          left: {20 + i * 15}%; 
-          top: 20vh;
-          border-color: {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
-          animation-delay: {i * 0.3 + 0.6}s;
-          box-shadow: 0 0 30px {['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181'][i]};
-        "
-      ></div>
-    {/each}
-    
-    <!-- Partikel-Explosion (200 Partikel!) -->
-    {#each Array(200) as _, i}
-      {@const angle = (i / 200) * Math.PI * 2}
-      {@const distance = 150 + Math.random() * 200}
-      {@const tx = Math.cos(angle) * distance}
-      {@const ty = Math.sin(angle) * distance}
-      {@const colors = ['#FFD700', '#FF6B6B', '#4ECDC4', '#95E1D3', '#F38181', '#FFA07A', '#98D8C8', '#F7DC6F']}
-      {@const burstIndex = Math.floor(i / 40)}
-      
-      <div 
-        class="firework-particle" 
-        style="
-          left: {20 + burstIndex * 15}%; 
-          top: 20vh;
-          background: {colors[Math.floor(Math.random() * colors.length)]};
-          --tx: {tx}px;
-          --ty: {ty}px;
-          animation-delay: {burstIndex * 0.3 + 0.7 + Math.random() * 0.2}s;
-          box-shadow: 0 0 10px {colors[Math.floor(Math.random() * colors.length)]};
-        "
-      ></div>
-    {/each}
-  </div>
 {/if}
 
 {#if showStreakPopup}
@@ -1258,15 +1080,15 @@
 
 <div class="min-h-screen">
   {#if loading && currentScreen !== 'userSelect'}
-    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex items-center justify-center">
+    <div class="min-h-screen animated-bg flex items-center justify-center">
       <div class="text-center">
         <div class="spinner mx-auto mb-4"></div>
         <p class="text-gray-700 font-semibold">Lädt...</p>
       </div>
     </div>
 
-  {:else if currentScreen === 'userSelect'}
-    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex items-center justify-center p-4">
+   {:else if currentScreen === 'userSelect'}
+    <div class="min-h-screen animated-bg flex items-center justify-center p-4">
       <div class="text-center">
         <h1 class="text-5xl font-bold text-gray-800 mb-3">Habit Tracker</h1>
         <p class="text-gray-600 text-lg mb-12">Wähle deinen Benutzer</p>
@@ -1286,7 +1108,7 @@
     </div>
 
   {:else if currentScreen === 'welcome'}
-    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex items-center justify-center p-4">
+    <div class="min-h-screen animated-bg flex items-center justify-center p-4">
       <div class="max-w-md w-full">
         <div class="text-center mb-8">
           <h1 class="text-4xl font-bold text-gray-800 mb-2 animate-bounce-once">
@@ -1346,7 +1168,7 @@
     </div>
 
   {:else if currentScreen === 'dailyHabits'}
-    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6 flex flex-col">
+    <div class="min-h-screen animated-bg p-6 flex flex-col">
       <div class="flex items-center justify-between mb-6">
         <button
           on:click={() => currentScreen = 'welcome'}
@@ -1500,7 +1322,7 @@
     </div>
 
   {:else if currentScreen === 'monthView'}
-    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6">
+    <div class="min-h-screen animated-bg p-6">
       <div class="max-w-6xl mx-auto">
         <div class="flex items-center justify-between mb-6">
           <button
@@ -1637,7 +1459,7 @@
     </div>
 
   {:else if currentScreen === 'dashboard'}
-    <div class="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 p-6">
+    <div class="min-h-screen animated-bg p-6">
       <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-8">
           <button
