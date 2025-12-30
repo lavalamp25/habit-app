@@ -637,7 +637,7 @@
     );
   }
   
-  function animateSuccess(node) {
+function animateSuccess(node) {
     if (!gsap || isAnimating) return;
     isAnimating = true;
     
@@ -649,7 +649,7 @@
     tl.to(node, {
       duration: 0.2,
       scale: 1.08,
-      rotateZ: 2, // Z-Achse für 2D-Rotation (nicht Y!)
+      rotateZ: 2,
       ease: "power2.out"
     })
     .to(node, {
@@ -661,7 +661,7 @@
     // Grüner Glow-Effekt
     .to(node, {
       duration: 0.25,
-      boxShadow: "0 0 100px rgba(34, 197, 94, 0.8), 0 0 150px rgba(34, 197, 94, 0.4)",
+      boxShadow: "0 0 50px rgba(34, 197, 94, 0.8), 0 0 100px rgba(34, 197, 94, 0.4)",
       ease: "power2.out"
     }, 0.1)
     .to(node, {
@@ -670,25 +670,52 @@
       ease: "power2.out"
     });
     
-    // Icon macht 360° Drehung
+    // Icon macht 360° Drehung - EINFACHE VERSION
     const icon = node.querySelector('.habit-icon');
     if (icon) {
-      gsap.fromTo(icon, 
-        { rotate: 0, scale: 1 },
-        {
-          duration: 0.6,
-          rotate: 360,
-          scale: 1.4,
-          ease: "back.out(1.5)",
-          onComplete: () => {
-            gsap.to(icon, {
-              duration: 0.3,
-              scale: 1,
-              ease: "power2.out"
-            });
+      // Wenn Emojis in Spans sind, animiere jeden einzeln
+      const emojiSpans = icon.querySelectorAll('.emoji-char');
+      
+      if (emojiSpans.length > 0) {
+        // Mehrere Emoji-Spans gefunden
+        emojiSpans.forEach((span, index) => {
+          gsap.fromTo(span, 
+            { rotate: 0, scale: 1 },
+            {
+              duration: 0.6,
+              rotate: 360,
+              scale: 1.4,
+              ease: "back.out(1.5)",
+              delay: index * 0.1,
+              onComplete: () => {
+                gsap.to(span, {
+                  duration: 0.3,
+                  scale: 1,
+                  ease: "power2.out"
+                });
+              }
+            }
+          );
+        });
+      } else {
+        // Kein Span gefunden, animiere das ganze Icon
+        gsap.fromTo(icon, 
+          { rotate: 0, scale: 1 },
+          {
+            duration: 0.6,
+            rotate: 360,
+            scale: 1.4,
+            ease: "back.out(1.5)",
+            onComplete: () => {
+              gsap.to(icon, {
+                duration: 0.3,
+                scale: 1,
+                ease: "power2.out"
+              });
+            }
           }
-        }
-      );
+        );
+      }
     }
   }
   
@@ -1207,7 +1234,9 @@
 
             <div class="text-center mb-6" style="position: relative; z-index: 1;">
               <div class="habit-icon text-7xl mb-4">
-                {currentHabit.icon}
+              {#each currentHabit.icon.match(/\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu) || [currentHabit.icon] as emoji}
+              <span class="emoji-char" style="display: inline-block;">{emoji}</span>
+              {/each}
               </div>
               <h3 class="text-2xl font-bold text-gray-800 mb-2">
                 {currentHabit.title}
