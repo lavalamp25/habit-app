@@ -21,6 +21,7 @@
   let selectedYear = new Date().getFullYear();
   let changedDates = new Set();
   let isSaving = false;
+  let pendingChanges = {}; // Lokale Änderungen (noch nicht in DB)
 
   // reactive
   $: currentHabit = habits[currentCardIndex];
@@ -354,13 +355,23 @@
     loading = false;
   }
 
-  async function openMonthView() {
+async function openMonthView() {
+  // Warnung falls ungespeicherte Änderungen
+  if (Object.keys(pendingChanges).length > 0) {
+    const confirmed = confirm(`Du hast ${changedDates.size} ungespeicherte Änderungen. Verwerfen und fortfahren?`);
+    if (!confirmed) return;
+  }
+  
+  // Reset
+  pendingChanges = {};
+  changedDates.clear();
+  changedDates = changedDates;
+  
   loading = true;
   await loadHabits(currentUser.id);
   await loadMonthData(currentUser.id, selectedMonth, selectedYear);
   currentScreen = 'monthView';
   loading = false;
-  // Stats im Hintergrund laden
   loadStatsForSelectedPeriod(currentUser.id, selectedMonth, selectedYear);
 }
 
@@ -482,56 +493,107 @@
     }
   }
 
-  async function updateMonthLog(logId, completed, date, habitId) {
-  // Sofort in DB speichern (aber KEINE Punkte-Neuberechnung!)
-  if (logId) {
-    await supabase
-      .from('habit_logs')
-      .update({ completed })
-      .eq('id', logId);
-  } else {
-    await supabase
-      .from('habit_logs')
-      .insert({
+async function updateMonthLog(logId, completed, date, habitId) {
+  // 1. Lokale Änderung speichern (für späteres DB-Update)
+  const changeKey = `${date}-${habitId}`;
+  pendingChanges[changeKey] = {
+    logId,
+    completed,
+    date,
+    habitId
+  };
+  
+  // 2. Datum als geändert markieren
+  changedDates.add(date);
+  changedDates = changedDates;
+  
+  // 3. monthGrid VISUELL updaten (für sofortiges Feedback)
+  const dayEntry = monthGrid.find(d => d.date === date);
+  if (dayEntry) {
+    // Falls Log existiert -> completed updaten
+    if (dayEntry.logsByHabit[habitId]) {
+      dayEntry.logsByHabit[habitId].completed = completed;
+    } else {
+      // Falls Log NICHT existiert -> neu erstellen (nur lokal!)
+      dayEntry.logsByHabit[habitId] = {
+        id: null, // Noch keine DB-ID
         habit_id: habitId,
         user_id: currentUser.id,
-        date,
-        completed
-      });
+        date: date,
+        completed: completed
+      };
+    }
   }
   
-  // Datum als "geändert" markieren
-  changedDates.add(date);
-  changedDates = changedDates; // Svelte Reaktivität triggern
+  // 4. Svelte Reaktivität triggern (WICHTIG!)
+  monthGrid = [...monthGrid];
   
-  // Tabelle sofort visuell updaten (lokal)
-  await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+  console.log('📝 Lokale Änderung:', date, habitId, completed ? '✓' : '✕');
 }
 
 async function saveChanges() {
-  if (changedDates.size === 0) return; // Nichts zu speichern
+  if (Object.keys(pendingChanges).length === 0) return;
   
   isSaving = true;
   
-  // Für jedes geänderte Datum Punkte neu berechnen
-  for (const date of changedDates) {
-    await updateDailyPoints(currentUser.id, date);
+  // 1. JETZT erst alle Änderungen in DB schreiben
+  for (const changeKey in pendingChanges) {
+    const change = pendingChanges[changeKey];
+    
+    if (change.logId) {
+      // Update bestehender Eintrag
+      await supabase
+        .from('habit_logs')
+        .update({ completed: change.completed })
+        .eq('id', change.logId);
+    } else {
+      // Neuer Eintrag
+      await supabase
+        .from('habit_logs')
+        .insert({
+          habit_id: change.habitId,
+          user_id: currentUser.id,
+          date: change.date,
+          completed: change.completed
+        });
+    }
+    
+    console.log('💾 DB gespeichert:', changeKey);
   }
   
-  // Stats neu laden
+  // 2. Punkte für alle geänderten Tage neu berechnen
+  for (const date of changedDates) {
+    await updateDailyPoints(currentUser.id, date);
+    console.log('🔢 Punkte berechnet für:', date);
+  }
+  
+  // 3. Stats neu laden
   await loadStatsForSelectedPeriod(currentUser.id, selectedMonth, selectedYear);
   
-  // Reset
+  // 4. Tabelle aus DB neu laden (falls andere User auch geändert haben)
+  await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+  
+  // 5. Reset
+  pendingChanges = {};
   changedDates.clear();
   changedDates = changedDates;
   isSaving = false;
+  
+  console.log('✅ Alle Änderungen gespeichert!');
 }
 
 async function discardChanges() {
-  // Einfach neu laden = Änderungen verwerfen
+  console.log('❌ Verwerfe', Object.keys(pendingChanges).length, 'Änderungen');
+  
+  // Lokale Änderungen löschen
+  pendingChanges = {};
   changedDates.clear();
   changedDates = changedDates;
+  
+  // Tabelle aus DB neu laden (zeigt alte Werte)
   await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+  
+  console.log('🔄 Tabelle zurückgesetzt');
 }
 
   function resetToUserSelect() {
@@ -1512,7 +1574,6 @@ function animateSuccess(node) {
               </div>
             </div>
           {/if}
-        
         
         <div class="mt-6 grid grid-cols-2 gap-4">
             <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 text-center">
