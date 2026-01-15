@@ -19,6 +19,8 @@
   let loading = true;
   let selectedMonth = new Date().getMonth();
   let selectedYear = new Date().getFullYear();
+  let changedDates = new Set();
+  let isSaving = false;
 
   // reactive
   $: currentHabit = habits[currentCardIndex];
@@ -95,55 +97,45 @@
     }
   }
 
-  // --- KORRIGIERTE FUNKTION: Punkteberechnung ---
   async function updateDailyPoints(userId, date) {
-    // 1. Nur die Logs laden (habit_id und completed), KEIN Join auf habits, da fehleranfällig
-    const { data: logs } = await supabase
-      .from('habit_logs')
-      .select('habit_id, completed')
-      .eq('user_id', userId)
-      .eq('date', date);
+  const { data: logs } = await supabase
+    .from('habit_logs')
+    .select('habit_id, completed')
+    .eq('user_id', userId)
+    .eq('date', date);
 
-    // 2. Berechnung LOKAL durchführen anhand des geladenen habits-Arrays
-    // Das ist die sicherste Methode, da wir die Punkte-Werte bereits in 'habits' haben.
-    let totalPoints = 0;
+  let totalPoints = 0;
 
-    if (logs && logs.length > 0) {
-      logs.forEach(log => {
-        if (log.completed) {
-          // Wir suchen den Habit in unserer lokalen Liste
-          const habit = habits.find(h => h.id === log.habit_id);
-          if (habit) {
-            totalPoints += (habit.points || 1);
-          }
+  if (logs && logs.length > 0) {
+    logs.forEach(log => {
+      if (log.completed) {
+        const habit = habits.find(h => h.id === log.habit_id);
+        if (habit) {
+          totalPoints += (habit.points || 1);
         }
-      });
-    }
-
-    // 3. Update oder Insert in point_logs
-    const { data: existingPointLog } = await supabase
-      .from('point_logs')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('date', date)
-      .single();
-
-    if (existingPointLog) {
-      await supabase
-        .from('point_logs')
-        .update({ points: totalPoints })
-        .eq('id', existingPointLog.id);
-    } else {
-      await supabase
-        .from('point_logs')
-        .insert({
-          user_id: userId,
-          date: date,
-          points: totalPoints
-        });
-    }
+      }
+    });
   }
-  // -------------------------------------------------------------
+
+  // NEUE LOGIK: Erst ALLE alten Einträge löschen, dann neu erstellen
+  const { error: deleteError } = await supabase
+    .from('point_logs')
+    .delete()
+    .eq('user_id', userId)
+    .eq('date', date);
+
+  // Dann EINEN neuen Eintrag erstellen
+  const { error: insertError } = await supabase
+    .from('point_logs')
+    .insert({
+      user_id: userId,
+      date: date,
+      points: totalPoints
+    });
+
+  if (deleteError) console.error('Fehler beim Löschen alter Einträge:', deleteError);
+  if (insertError) console.error('Fehler beim Erstellen neuer Einträge:', insertError);
+}
 
   async function loadMonthData(userId, month, year) {
     const startDateObj = new Date(year, month, 1, 12, 0, 0);
@@ -491,6 +483,7 @@
   }
 
   async function updateMonthLog(logId, completed, date, habitId) {
+  // Sofort in DB speichern (aber KEINE Punkte-Neuberechnung!)
   if (logId) {
     await supabase
       .from('habit_logs')
@@ -507,11 +500,38 @@
       });
   }
   
-  await updateDailyPoints(currentUser.id, date);
+  // Datum als "geändert" markieren
+  changedDates.add(date);
+  changedDates = changedDates; // Svelte Reaktivität triggern
   
-  // Wichtig: In dieser Reihenfolge neu laden
+  // Tabelle sofort visuell updaten (lokal)
   await loadMonthData(currentUser.id, selectedMonth, selectedYear);
+}
+
+async function saveChanges() {
+  if (changedDates.size === 0) return; // Nichts zu speichern
+  
+  isSaving = true;
+  
+  // Für jedes geänderte Datum Punkte neu berechnen
+  for (const date of changedDates) {
+    await updateDailyPoints(currentUser.id, date);
+  }
+  
+  // Stats neu laden
   await loadStatsForSelectedPeriod(currentUser.id, selectedMonth, selectedYear);
+  
+  // Reset
+  changedDates.clear();
+  changedDates = changedDates;
+  isSaving = false;
+}
+
+async function discardChanges() {
+  // Einfach neu laden = Änderungen verwerfen
+  changedDates.clear();
+  changedDates = changedDates;
+  await loadMonthData(currentUser.id, selectedMonth, selectedYear);
 }
 
   function resetToUserSelect() {
@@ -1062,6 +1082,11 @@ function animateSuccess(node) {
       animation: gradientFlow 15s ease infinite;
     }
 
+    /* Animate-in für Save-Button Bar */
+    .animate-in {
+      animation: slideUp 0.3s ease-out;
+    }
+
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/Flip.min.js"></script>
@@ -1449,7 +1474,47 @@ function animateSuccess(node) {
               {/each}
             </tbody>
           </table>
-          <div class="mt-6 grid grid-cols-2 gap-4">
+          
+          <!-- NEU: Save/Discard Buttons -->
+          {#if changedDates.size > 0}
+            <div class="mt-6 bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-4 flex items-center justify-between animate-in">
+              <div class="flex items-center gap-3">
+                <div class="text-3xl">⚠️</div>
+                <div>
+                  <div class="text-sm font-bold text-gray-800">Ungespeicherte Änderungen</div>
+                  <div class="text-xs text-gray-600">
+                    {changedDates.size} Tag{changedDates.size !== 1 ? 'e' : ''} wurde{changedDates.size !== 1 ? 'n' : ''} bearbeitet
+                  </div>
+                </div>
+              </div>
+              
+              <div class="flex gap-2">
+                <button
+                  on:click={discardChanges}
+                  disabled={isSaving}
+                  class="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-xl font-semibold transition-all duration-300 border border-gray-300 disabled:opacity-50"
+                >
+                  ❌ Verwerfen
+                </button>
+                
+                <button
+                  on:click={saveChanges}
+                  disabled={isSaving}
+                  class="px-6 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-xl font-semibold transition-all duration-300 shadow-lg disabled:opacity-50 flex items-center gap-2"
+                >
+                  {#if isSaving}
+                    <div class="spinner w-4 h-4"></div>
+                    Speichert...
+                  {:else}
+                    💾 Änderungen speichern
+                  {/if}
+                </button>
+              </div>
+            </div>
+          {/if}
+        
+        
+        <div class="mt-6 grid grid-cols-2 gap-4">
             <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 text-center">
               <div class="text-sm text-gray-600 mb-2">Punkte in {getMonthName(selectedMonth)}</div>
               <div class="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
